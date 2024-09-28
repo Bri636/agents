@@ -10,7 +10,7 @@ authors = [
 ]
 description = "Package for agents, including RL algorithms for agentic learning"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9.1"
 license = {text = "MIT"}
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -42,9 +42,6 @@ dependencies = [
 homepage = "https://github.com/Bri636/agents"
 documentation = "https://github.com/Bri636/agents"
 repository = "https://github.com/Bri636/agents"
-
-[project.scripts]
-metric-llm = "metric_llm.cli:main"
 
 [project.optional-dependencies]
 dev = [

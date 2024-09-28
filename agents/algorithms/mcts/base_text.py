@@ -12,22 +12,9 @@ from abc import ABC, abstractmethod
 class BaseNode(ABC):
     '''Container node class for MCTS that wraps around BaseNode'''
     
-    def __init__(self, 
-                 state: Any, 
-                 action: Any,
-                 children: list[Any] = None, 
-                 action_space: Any = None
-                 ) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        
-        self.state = state
-        self.action = action
-        self.children = children
-        self.action_space = action_space
-        
-        # computed from some criteria measure
-        self.value = None
-        self.number_visits = 0
+        '''Attributes goes here'''
         
     @property
     def is_fully_expanded(self) -> bool: 

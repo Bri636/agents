@@ -1,2 +1,0 @@
-[console_scripts]
-metric-llm = metric_llm.cli:main
