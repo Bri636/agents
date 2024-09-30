@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-from typing import Any, List, Literal, Mapping, Optional, Tuple, Dict
+from typing import Any, List, Literal, Mapping, Optional, Tuple, Dict, Union
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,7 +18,12 @@ from langchain_core.embeddings.embeddings import Embeddings
 from sqlalchemy import desc
 from langchain_core.prompts import PromptTemplate
 
+from agents.configs import BaseConfig
+from agents.base_classes import BaseLLMGenerator
+from agents import generator_registry
+
 class ModelType(Enum):
+    '''Suppored Models With Argo'''
     GPT35 = 'gpt35'
     GPT4 = 'gpt4'
     GPT4O = 'gpt4o'
@@ -26,6 +31,9 @@ class ModelType(Enum):
     
 class ArgoGeneratorConfig(BaseConfig): 
     '''Base Config for Argo Language Model'''
+    
+    _name: str = 'ArgoGenerator'
+    
     model_type:Literal['gpt35', 'gpt4', 'gpt4o', 'gpt4turbo', 'o1preview']=Field(
         default='gpt4turbo', 
         description='What kind of language model to use from openai'
@@ -51,11 +59,11 @@ class ArgoGeneratorConfig(BaseConfig):
     )
     
 class ArgoLLM(LLM):
-
+    '''Overwritten langchain LLM model'''
     model_type: ModelType = ModelType.GPT4
     url: str = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
     temperature: Optional[float] = 0.0
-    system: Optional[str]
+    system: Optional[str] = 'None'
     top_p: Optional[float]= 0.0000001
     user: str = 'bhsu'
     
@@ -113,17 +121,17 @@ class ArgoLLM(LLM):
     def _generations(self):
         return
     
-    
-class ArgoGenerator(LLMGenerator): 
+@generator_registry.register(BaseLLMGenerator.CLASS_TYPE, config=ArgoGeneratorConfig)
+class ArgoGenerator(BaseLLMGenerator): 
     '''Argo generator for generating outputs'''
     
-    def __init__(self, config:ArgoGeneratorConfig): 
+    def __init__(self, config:ArgoGeneratorConfig) -> None: 
         from langchain.chains.llm import LLMChain
         from langchain_core.prompts import ChatPromptTemplate
         
         llm = ArgoLLM()
         
-        # set attributes of model 
+        # set class attributes of model 
         setattr(llm, 'model_type', config.model_type)
         setattr(llm, 'temperature', config.temperature)
         setattr(llm, 'system', config.system)
@@ -132,14 +140,25 @@ class ArgoGenerator(LLMGenerator):
         
         prompt = ChatPromptTemplate.from_template('{input}')
         
-        chain = LLMChain(llm=llm, 
-                         prompt=prompt)
+        chain = LLMChain(llm=llm, prompt=prompt)
         
         self.llm = llm
         self.chain = chain
         
-    def generate(self, prompts: str | list[str]) -> str | list[str]: 
-        '''Generated function for list of payload inferences'''
+    def generate(self, prompts: Union[str, list[str]]) -> list[str]: 
+        """Generate response text from prompts.
+
+        Parameters
+        ----------
+        prompts : str | list[str]
+            The prompts to generate text from.
+
+        Returns
+        -------
+        list[str]
+            A list of responses generated from the prompts
+            (one response per prompt).
+        """
         
         if isinstance(prompts, str): 
             prompts = [prompts]
