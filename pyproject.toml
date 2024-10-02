@@ -35,7 +35,12 @@ dependencies = [
     "langchain-openai", 
     "typer", 
     "bigtree", 
-    "gymnasium"
+    "gymnasium", 
+    "langchain_community", 
+    "langchain_anthropic", 
+    "langchain_google_genai", 
+    "langchain_voyageai", 
+    "trl"
 ]
 
 [project.urls]

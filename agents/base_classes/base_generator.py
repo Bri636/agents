@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 
 from agents.configs import BaseConfig
 
-class BaseLLMGenerator(ABC):
+class BaseLLMGenerator(Protocol):
     """Generator protocol for all generators to follow."""
     
     CLASS_TYPE = 'Generators'
@@ -16,7 +16,6 @@ class BaseLLMGenerator(ABC):
     def __init__(self, config: BaseConfig) -> None:
         """Initialize the generator with the configuration."""
         
-    @abstractmethod
     def generate(self, prompts: str | list[str]) -> list[str]:
         """Generate response text from prompts.
 
