@@ -45,7 +45,7 @@ class LangchainGeneratorConfig(BaseConfig):
         'OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY',
     )
 
-generator_registry.register(BaseLLMGenerator.CLASS_TYPE, LangchainGeneratorConfig)
+generator_registry.register(BaseLLMGenerator.CLASS_TYPE, config=LangchainGeneratorConfig)
 class LangChainGenerator(BaseLLMGenerator):
     """Create simple language chains for inference."""
 

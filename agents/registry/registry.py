@@ -8,6 +8,10 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
+from rich.console import Console
+from rich.pretty import Pretty
+from io import StringIO
+
 class Registry:
     """A general registry to map names to classes.
 
@@ -55,7 +59,17 @@ class Registry:
             The registered class, or None if not found.
         """
         return self._registry.get(name)
+    
+    def __str__(self) -> str:
+        return self._get_rich_output()
 
+    def __repr__(self) -> str:
+        return self._get_rich_output()
+    
+    def _get_rich_output(self) -> str:
+        console = Console(file=StringIO(), force_jupyter=False, force_terminal=True)
+        console.print(Pretty(self._registry))
+        return console.file.getvalue()
 
 class CoupledRegistry:
     """
@@ -118,6 +132,17 @@ class CoupledRegistry:
         if field is None:
             return self._registry.get(name)
         return self._registry.get(name, {}).get(field)
+    
+    def __str__(self) -> str:
+        return self._get_rich_output()
+
+    def __repr__(self) -> str:
+        return self._get_rich_output()
+    
+    def _get_rich_output(self) -> str:
+        console = Console(file=StringIO(), force_jupyter=False, force_terminal=True)
+        console.print(Pretty(self._registry))
+        return console.file.getvalue()
 
 
 def import_submodules(package_name):

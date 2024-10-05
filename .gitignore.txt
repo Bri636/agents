@@ -374,3 +374,4 @@ GitHub.sublime-settings
 **/*.pyc # ** means match all directories including subdirectories
 **/.egg-info/*
 **/logs/*
+logs/*

@@ -9,5 +9,3 @@ from agents.generators.argo_generator import *
 
 import_submodules(__name__) # import all files from generators
 
-
-breakpoint()

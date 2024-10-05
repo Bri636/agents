@@ -8,7 +8,7 @@ from pydantic import BaseModel, field_validator
 
 from agents.configs import BaseConfig
 
-class BasePayload(BaseModel, Protocol): 
+class BasePayload(Protocol): 
     '''Container for inputs into a model'''
     ...
     

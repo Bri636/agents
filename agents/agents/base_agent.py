@@ -23,7 +23,6 @@ class BaseGenerativeAgent(Protocol):
     - generator: LLM generator class used for inference 
     - prompt_template: str template that can batch preprocess dictionary kwargs with .format()
     - parser: json parser that takes out 
-    - solver: converts str actions into executable moves 
     """
     
     def __init__(self, 
@@ -31,7 +30,6 @@ class BaseGenerativeAgent(Protocol):
                  generator: BaseLLMGenerator,
                  prompt_template: BasePromptTemplate,
                  parser: Optional[Union[Type, Callable]], 
-                 solver: Optional[Union[Type, Callable]], 
                  **kwargs
                  ) -> None:
         """Initialize the generator with the configuration."""
@@ -41,12 +39,4 @@ class BaseGenerativeAgent(Protocol):
         
     def parse_outputs(self, **kwargs) -> list[Any]: 
         """ Loops through raw outputs and parses it with the parser """
-        
-    def map_actions(self, **kwargs) -> list[Any]: 
-        """ Optional that maps parsed outputs to actions that can be executed in the environment """
-        pass
-    
-    def execute(self, **kwargs) -> None: 
-        
-        ...
     

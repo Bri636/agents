@@ -40,7 +40,9 @@ dependencies = [
     "langchain_anthropic", 
     "langchain_google_genai", 
     "langchain_voyageai", 
-    "trl"
+    "trl", 
+    "parsl", 
+    "autogen"
 ]
 
 [project.urls]
