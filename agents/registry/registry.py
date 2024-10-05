@@ -75,10 +75,21 @@ class CoupledRegistry:
     """
     A registry to map names to a set of classes.
 
-    Attributes
+    Attributes:
     ----------
     _registry : Dict[str, Dict[str, Any]]
         A dictionary storing the mappings from names to set of classes.
+        
+    Info:
+    -----
+    Registry structured as so: 
+    
+    self._registry = {
+        class: 'CLASS_TYPE': {
+            'class': cls, 
+            kwargs ==> k:v ... ex. 'config' = BaseConfig => 'config': BaseConfig
+        }
+    }
     """
 
     def __init__(self) -> None:
@@ -105,8 +116,8 @@ class CoupledRegistry:
         def decorator(cls: type) -> type:
             class_name = name if name else cls.__name__
             if class_name in self._registry:
-                self._registry[class_name].update(kwargs)
-                self._registry[class_name]['class'] = cls
+                self._registry[class_name].update(kwargs) # updates the kwargs with new kv pairs
+                self._registry[class_name]['class'] = cls # makes a 'class': cls kv pair
             else:
                 self._registry[class_name] = {'class': cls, **kwargs}
             return cls

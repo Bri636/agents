@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, Callable, Optional, Any, TypeVar, Type, Union, runtime_checkable
 from abc import ABC, abstractmethod
+from functools import singledispatch
 
 from agents.configs import BaseConfig
 from agents.base_classes import BaseLLMGenerator
@@ -31,6 +32,7 @@ class BaseActionAgent(Protocol):
                  generator: BaseLLMGenerator,
                  prompt_template: BasePromptTemplate,
                  parser: Optional[Union[Type, Callable]], 
+                 output_fn: Optional[Union[Type, Callable]], 
                  solver: Optional[Union[Type, Callable]], 
                  **kwargs
                  ) -> None:

@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from typing import Protocol, Callable, Optional, Any, TypeVar, Type, Union, runtime_checkable
 from abc import ABC, abstractmethod
+from functools import singledispatch
 
 from agents.configs import BaseConfig
 from agents.base_classes import BaseLLMGenerator
 from agents.base_classes import BasePromptTemplate
 
 T = TypeVar('T')
+
+@singledispatch
+def output_function(llm_output: str) -> dict[str, Any]: 
+    '''Base dispatch function for parsing raw llm strings into a workable dict object'''
+    
+    pass 
 
 class BaseGenerativeAgent(Protocol): 
     """
@@ -30,6 +37,7 @@ class BaseGenerativeAgent(Protocol):
                  generator: BaseLLMGenerator,
                  prompt_template: BasePromptTemplate,
                  parser: Optional[Union[Type, Callable]], 
+                 output_fn: Optional[Union[Type, Callable]],
                  **kwargs
                  ) -> None:
         """Initialize the generator with the configuration."""

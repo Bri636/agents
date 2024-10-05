@@ -15,9 +15,9 @@ class StrategyPromptTemplateConfig(BaseConfig):
     """Configuration for the StrategyPromptTemplate"""
     _name: Literal['strategy'] = 'strategy'  # type: ignore[assignment]
 
-class StrategyPayload(BasePayload): 
+# class StrategyPayload(BasePayload): 
     
-    task: str = Fiel
+#     task: str = Fiel
 
 class StrategyPromptTemplate(BasePromptTemplate):
     """Question answer prompt template."""

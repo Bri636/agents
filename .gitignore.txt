@@ -370,8 +370,21 @@ GitHub.sublime-settings
 
 
 # ignore other stuff
-**/__pycache__/ # all pycache in subdirs
-**/*.pyc # ** means match all directories including subdirectories
-**/.egg-info/*
-**/logs/*
-logs/*
+# Ignore .egg-info files
+agents.egg-info/
+
+# Ignore __pycache__ directories and .pyc files
+**/__pycache__/
+**/*.pyc
+
+# Ignore dataset lock files and incomplete files
+agents/data/**/*.lock
+agents/data/**/*.incomplete_info.lock
+
+# Ignore logs
+logs/**/*.log
+agents/trees/logs/**/*.log
+
+# ignore datasets 
+**/data/**/*.json
+**/data/**/*.arrow

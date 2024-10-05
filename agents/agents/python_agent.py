@@ -8,9 +8,12 @@ from abc import ABC, abstractmethod
 from agents.configs import BaseConfig
 from agents.base_classes import BaseLLMGenerator
 from agents.base_classes import BasePromptTemplate
-from agents.base_action_agent import BaseActionAgent
+from agents.base_action_agent import BaseActionAgent, output_function
 
 T = TypeVar('T')
+
+@output_function.register()
+def output_fn()
 
 class PythonCodeAgent(BaseActionAgent): 
     
