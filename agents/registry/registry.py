@@ -74,7 +74,7 @@ class Registry:
 class CoupledRegistry:
     """
     A registry to map names to a set of classes.
-
+    
     Attributes:
     ----------
     _registry : Dict[str, Dict[str, Any]]

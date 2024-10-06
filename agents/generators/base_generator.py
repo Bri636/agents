@@ -10,8 +10,6 @@ from agents.configs import BaseConfig
 
 class BaseLLMGenerator(Protocol):
     """Generator protocol for all generators to follow."""
-    
-    CLASS_TYPE = 'Generators'
 
     def __init__(self, config: BaseConfig) -> None:
         """Initialize the generator with the configuration."""

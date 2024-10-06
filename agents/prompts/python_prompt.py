@@ -1,78 +1,83 @@
 from __future__ import annotations
 
 from typing import Any, Union, Optional
+from textwrap import dedent
+from pydantic import Field
+import json
 
 """ Basic Python Prompt Implementation """
 
 from agents.configs.configs import BaseConfig
-from agents.prompts.base_prompt import BasePromptTemplate, BaseOutputPayload, base_parsing_function
+from agents.prompts.base_prompt import BasePromptTemplate, BaseOutputPayload, BaseInputPayload
 
-from agents import prompt_registry
+from agents import prompt_registry, output_payload_registry, input_payload_registry
 
-class PythonPromptConfig(BaseConfig): 
-    _name: str = 'python'
+AGENT_NAME = 'Python' # name of the agent 
+
+output_payload_registry.register(AGENT_NAME)
+class PythonOutputPayload(BaseOutputPayload): 
     
-@prompt_registry.register(BasePromptTemplate.CLASS_TYPE, config = PythonPromptConfig)
+    reasoning: str = Field(
+        description='The reasoning for the task that is given to you. ',
+        default='None'
+    )
+    
+    code: str = Field(
+        description='Your python function as a string.',
+        default='None'
+    ) 
+
+input_payload_registry.register(AGENT_NAME)
+class PythonInputPayload(BaseInputPayload): 
+    
+    strategy: str = Field(
+        description='string strategy to use', 
+        default='Think Step by Step'
+    )
+    
+    output_format: str = Field(
+        description='Output format json from OutputPayload', 
+        default=PythonOutputPayload.get_output_format()
+    )
+    
+    task: str = Field(
+        description='The task to complete', 
+        default='None'
+    )
+    
+    code_functions: str = Field(
+        description='Text of code functions', 
+        default='None'
+    )
+    
+@prompt_registry.register(AGENT_NAME)
 class PythonPrompt(BasePromptTemplate): 
     
-    template: str = '''
-    You are an intelligent coding agent that is an expert in running python workflows. 
-    Your goal is to help me execute python code that I will give you based on a task I specify. 
-    
-    At each round of conversation, I will provide you with the following: 
-    
-    Task: 
-    // ... //
-    
-    Code Functions: 
-    // Python functions that I currently have, along with their descriptions // 
-    
-    
-    
-    
-    
-    
-    '''
-    
-    def __init__(self, config: BaseConfig) -> None:
-        super().__init__(config)
-        
-        
-    def preprocess(
-        self,
-        text: str | list[str],
-        contexts: list[list[str]] | None = None,
-        scores: list[list[float]] | None = None
-        ) -> list[str]:
-        """Preprocess the text into prompts.
+    template: str = dedent('''
+System: 
+You are an intelligent coding agent that is an expert in running python workflows. 
+Your goal is to help me execute python code that I will give you based on a task I specify. 
 
-        Parameters
-        ----------
-        text : str
-            The text to preprocess.
-        contexts : list[list[str]], optional
-            The contexts to include for each text, by default None.
-        scores : list[list[float]], optional
-            The scores for each context, by default None.
+At each round of conversation, I will provide you with the following: 
 
-        Returns
-        -------
-        list[str]
-            The preprocessed prompts.
-        """
-        ...
+Task: 
+// This is a specific instruction that I will give you that you will have to turn into code in json format. //
 
-    def postprocess(self, responses: list[str]) -> list[str]:
-        """Postprocess the responses.
+Code Functions: 
+// Python functions that I currently have, along with their descriptions // 
 
-        Parameters
-        ----------
-        responses : list[str]
-            The responses to postprocess.
+Here are some strategies for how you should think about coding: 
+{strategy}
 
-        Returns
-        -------
-        list[str]
-            The postprocessed responses.
-        """
-        ...
+You will respond to me in the following format: 
+Output Format: 
+{output_format}
+
+Human: 
+
+Task: 
+{task}
+
+Code Functions: 
+{code_functions}
+    ''')

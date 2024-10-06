@@ -8,83 +8,37 @@ from abc import ABC, abstractmethod
 from functools import singledispatch
 from pydantic import BaseModel, Field
 from langchain.prompts import PromptTemplate
+from rich import print_json
 
 from agents.configs import BaseConfig
-from agents import input_payload_registry, output_payload_registry, llm_output_parser_registry, prompt_registry
-from agents.prompts.utils import PARSING_STRATEGIES
+from agents import input_payload_registry, output_payload_registry, prompt_registry
 
-AGENT = 'Base'
+AGENT_NAME = 'Base' # flag that denotes the type of agent 
 
-input_payload_registry.register(name=AGENT)
+input_payload_registry.register(name=AGENT_NAME)
 class BaseInputPayload(BaseModel):
     ''' Base Input Payload for LLM. Allows for intake different dicts from different agents. 
     Override this with actual attributes you want to prompt to take. 
     '''
     
-output_payload_registry.register(name=AGENT)
+output_payload_registry.register(name=AGENT_NAME)
 class BaseOutputPayload(BaseModel):
     ''' Base class for Parsed Outputs. Add fields to this base output class. 
     By default, error field is included. 
     '''
-    error: Union[dict[str, str], None] = Field(
-        description='error message if parsing error'
+    error: Union[str, None] = Field(
+        description='Error message from a parsing error from your code in a previous round',
+        default='None'
     )
     
-class LLMOutputParserConfig(BaseConfig): 
-    ...
-
-llm_output_parser_registry.register(name=AGENT)
-class LLMOutputParser:
-    ''' Class that parses json outputs, then filters them through a custom output pydantic class 
-    to return only the fields specified in the pydantic class. 
-    '''
-
-    def __init__(self, output_cls: BaseOutputPayload, parsing_strategy: Literal['dict', 'json']) -> None:
-
-        self.output_cls = output_cls
-        self.parser = PARSING_STRATEGIES.get(parsing_strategy)
-
-    def parse_from_output(self, llm_output: str) -> BaseOutputPayload:
-        '''Uses llm_output_parser to parse raw string output and then organize it into a ParsedOutput'''
-
-        try:
-            parsed_output: dict[str, Any] = self.parser(llm_output)
-            parsed_output.update({'error': None})
-
-            return BaseOutputPayload(**parsed_output)
-
-        except Exception as e:
-            parsed_output = {'error': e}
-            filled_payload: dict[str, None] = {
-                k: None for k, _ in
-                list(self.output_cls.model_fields.keys())}
-            parsed_output.update(filled_payload)
-
-            return BaseOutputPayload(**parsed_output)
-        
-
-class BasePromptTemplateConfig(BaseConfig): 
-    ''' Base config and class holder for base prompt template. 
-    It will compute an llm parser based on what the strategy, input_payload, and output_payload is
-    '''
-    _name: str = 'base'
+    @classmethod
+    def get_output_format(cls) -> str:
+        '''Returns the description of the Payload field class as a str'''
+        output_dict = {field: cls.model_fields[field].description 
+                       for field in cls.model_fields if field != 'error'}
+        return json.dumps(output_dict, indent=4)  # Use json.dumps to format it neatly
     
-    strategy: Literal['dict', 'json'] = Field(
-        description='What kind of parsing strategy to use', 
-        default='dict'
-    )
-    
-    input_payload: BaseInputPayload = Field(
-        description='What type of input payload to use', 
-        default_factory=BaseInputPayload
-    )
-    
-    output_payload: BaseOutputPayload = Field(
-        description='What type of Output payload to use', 
-        default_factory=BaseOutputPayload
-    )
-    
-
+prompt_registry.register(name=AGENT_NAME)
 class BasePromptTemplate(ABC):
     """PromptTemplate ABC protocol for all prompts to follow. Use ABC since we want to be strict 
     with how prompts are handled and inherited, and inherit methods
@@ -101,26 +55,13 @@ class BasePromptTemplate(ABC):
 
     template: str = """ // Your Prompt Template Goes Here // """
 
-    def __init__(self, config: BasePromptTemplateConfig) -> None:
+    def __init__(self) -> None:
         """Initialize the prompt with the configuration."""
         
-        parsing_strategy = PARSING_STRATEGIES.get(config.strategy)
-        input_payload = config.input_payload
-        output_payload = config.output_payload
-        
-        self.llm_output_parser = LLMOutputParser()
-        
-        
         chat_template = PromptTemplate.from_template(self.template)
+        self.chat_template = chat_template
         
-
-    @abstractmethod
-    def preprocess(
-        self,
-        text: str | list[str],
-        contexts: list[list[str]] | None = None,
-        scores: list[list[float]] | None = None
-    ) -> list[str]:
+    def preprocess(self, **kwargs: dict[str, Any]) -> list[str]:
         """Preprocess the text into prompts.
 
         Parameters
@@ -137,7 +78,7 @@ class BasePromptTemplate(ABC):
         list[str]
             The preprocessed prompts.
         """
-        pass
+        self.chat_template.format(**kwargs)
 
     @abstractmethod
     def postprocess(self, responses: list[str]) -> list[str]:
@@ -154,3 +95,9 @@ class BasePromptTemplate(ABC):
             The postprocessed responses.
         """
         pass
+
+    def __repr__(self) -> str:
+        return f'Chain Prompt: {self.chat_template}'
+    
+    def __str__(self) -> str:
+        return f'Chain Prompt: {self.chat_template}'

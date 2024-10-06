@@ -12,12 +12,6 @@ from agents.base_classes import BasePromptTemplate
 
 T = TypeVar('T')
 
-@singledispatch
-def output_function(llm_output: str) -> dict[str, Any]: 
-    '''Base dispatch function for parsing raw llm strings into a workable dict object'''
-    
-    pass 
-
 class BaseGenerativeAgent(Protocol): 
     """
     Summary: 

@@ -9,9 +9,7 @@ task_registry = CoupledRegistry()
 metric_registry = Registry()
 
 # registries required for agent factory 
-agent_registry = CoupledRegistry()
-generator_registry = CoupledRegistry()
+action_agent_registry = CoupledRegistry()
 prompt_registry = CoupledRegistry()
 input_payload_registry = CoupledRegistry()
 output_payload_registry = CoupledRegistry()
-llm_output_parser_registry = CoupledRegistry()
