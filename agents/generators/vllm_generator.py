@@ -6,8 +6,7 @@ from typing import Literal
 from enum import Enum
 
 from agents.configs import BaseConfig
-from agents.base_classes import BaseLLMGenerator
-from agents import generator_registry
+from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
@@ -43,7 +42,6 @@ class VLLMGeneratorConfig(BaseConfig):
     # The number of GPUs to use
     tensor_parallel_size: int = 1
 
-@generator_registry.register(BaseLLMGenerator.CLASS_TYPE, config=VLLMGeneratorConfig)
 class VLLMGenerator(BaseLLMGenerator):
     """Language model generator using vllm backend."""
 

@@ -19,8 +19,7 @@ from sqlalchemy import desc
 from langchain_core.prompts import PromptTemplate
 
 from agents.configs import BaseConfig
-from agents.base_classes import BaseLLMGenerator
-from agents import generator_registry
+from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum):
     '''Suppored Models With Argo'''
@@ -121,7 +120,6 @@ class ArgoLLM(LLM):
     def _generations(self):
         return
     
-@generator_registry.register(BaseLLMGenerator.CLASS_TYPE, config=ArgoGeneratorConfig)
 class ArgoGenerator(BaseLLMGenerator): 
     '''Argo generator for generating outputs'''
     

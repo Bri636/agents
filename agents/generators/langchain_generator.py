@@ -8,8 +8,7 @@ from pathlib import Path
 from enum import Enum
 
 from agents.configs import BaseConfig
-from agents.generators import BaseLLMGenerator
-from agents.generators import generator_registry
+from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum): 
     GPT35 = 'gpt-3.5-turbo'
@@ -45,7 +44,6 @@ class LangchainGeneratorConfig(BaseConfig):
         'OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY',
     )
 
-generator_registry.register(BaseLLMGenerator.CLASS_TYPE, config=LangchainGeneratorConfig)
 class LangChainGenerator(BaseLLMGenerator):
     """Create simple language chains for inference."""
 

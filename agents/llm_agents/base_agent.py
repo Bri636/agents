@@ -7,16 +7,16 @@ from abc import ABC, abstractmethod
 from functools import singledispatch
 
 from agents.configs import BaseConfig
-from agents.base_classes import BaseLLMGenerator
-from agents.base_classes import BasePromptTemplate
+from agents.generators.base_generator import BaseLLMGenerator
+from agents.prompts.base_prompt import BasePromptTemplate
 
 T = TypeVar('T')
 
-class BaseActionAgent(Protocol): 
+class BaseGenerativeAgent(Protocol): 
     """
     Summary: 
     ========
-    Base Container Class for Action Agents - This Agent Is Used for Inference Only:
+    Base Container Class for Generative Agents - This Agent Is Used for Inference Only:
     
     Base Attributes: 
     =============== 
@@ -24,7 +24,6 @@ class BaseActionAgent(Protocol):
     - generator: LLM generator class used for inference 
     - prompt_template: str template that can batch preprocess dictionary kwargs with .format()
     - parser: json parser that takes out 
-    - solver: converts str actions into executable moves 
     """
     
     def __init__(self, 
@@ -32,8 +31,7 @@ class BaseActionAgent(Protocol):
                  generator: BaseLLMGenerator,
                  prompt_template: BasePromptTemplate,
                  parser: Optional[Union[Type, Callable]], 
-                 output_fn: Optional[Union[Type, Callable]], 
-                 solver: Optional[Union[Type, Callable]], 
+                 output_fn: Optional[Union[Type, Callable]],
                  **kwargs
                  ) -> None:
         """Initialize the generator with the configuration."""
@@ -43,15 +41,4 @@ class BaseActionAgent(Protocol):
         
     def parse_outputs(self, **kwargs) -> list[Any]: 
         """ Loops through raw outputs and parses it with the parser """
-        
-    def map_actions(self, **kwargs) -> list[Any]: 
-        """ Optional that maps parsed outputs to actions that can be executed in the environment """
-        pass
     
-    def execute(self, **kwargs) -> None: 
-        """ Execute an action """
-        pass
-    
-    def iteratively_generate(self, **kwargs) -> None: 
-        """ Execute agents projects """
-        pass

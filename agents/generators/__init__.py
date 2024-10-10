@@ -2,15 +2,9 @@ from __future__ import annotations
 
 '''Import registrated generator classes'''
 
-from typing import Union, Optional
+from typing import Union, Optional, Any
 
-from agents import generator_registry
-from agents.registry.registry import import_submodules
-
-from agents.generators.argo_generator import *
-
-import_submodules(__name__) # import all files from generators
-
+from agents.generators.base_generator import BaseLLMGenerator
 from agents.generators.argo_generator import ArgoGenerator, ArgoGeneratorConfig
 from agents.generators.langchain_generator import LangChainGenerator, LangchainGeneratorConfig
 from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
@@ -36,7 +30,7 @@ STRATEGIES = {
 def get_generator(name: str, **kwargs: dict[str, Any]) -> BaseLLMGenerator:
     ''' Function for initializing generator '''
     
-    strategy = STRATEGIES.get(name)  # type: ignore[arg-type]
+    strategy = STRATEGIES.get(name.lower())  # type: ignore[arg-type]
     if not strategy:
         raise ValueError(
             f'Unknown generator name: {name}.'
@@ -44,7 +38,7 @@ def get_generator(name: str, **kwargs: dict[str, Any]) -> BaseLLMGenerator:
         )
 
     # Get the config and classes
-    config_cls, cls = strategy
+    cls, config_cls = strategy
     return cls(config_cls(**kwargs))
 
 

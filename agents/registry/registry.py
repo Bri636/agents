@@ -150,6 +150,9 @@ class CoupledRegistry:
     def __repr__(self) -> str:
         return self._get_rich_output()
     
+    def get_supported_agents(self) -> list[str]: 
+        return list(self._registry.keys())
+    
     def _get_rich_output(self) -> str:
         console = Console(file=StringIO(), force_jupyter=False, force_terminal=True)
         console.print(Pretty(self._registry))

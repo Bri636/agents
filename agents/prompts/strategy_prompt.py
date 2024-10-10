@@ -9,7 +9,7 @@ from typing import Literal, Union, Optional
 from pydantic import BaseModel
 
 from agents.configs import BaseConfig
-from agents.base_classes import BasePromptTemplate, BasePayload
+from agents.prompts.base_prompt import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
 
 class StrategyPromptTemplateConfig(BaseConfig):
     """Configuration for the StrategyPromptTemplate"""

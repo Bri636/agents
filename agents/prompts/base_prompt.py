@@ -11,17 +11,26 @@ from langchain.prompts import PromptTemplate
 from rich import print_json
 
 from agents.configs import BaseConfig
-from agents import input_payload_registry, output_payload_registry, prompt_registry
+from agents import prompt_registry
+from agents import input_payload_registry
+from agents import output_payload_registry
 
 AGENT_NAME = 'Base' # flag that denotes the type of agent 
 
-input_payload_registry.register(name=AGENT_NAME)
+@input_payload_registry.register(name=AGENT_NAME)
 class BaseInputPayload(BaseModel):
     ''' Base Input Payload for LLM. Allows for intake different dicts from different agents. 
     Override this with actual attributes you want to prompt to take. 
     '''
     
-output_payload_registry.register(name=AGENT_NAME)
+    
+    def update_error(self, **kwargs) -> None: 
+        '''
+        Optional function to update in order to add error feedback to input payload iteratively
+        '''
+        pass
+    
+@output_payload_registry.register(name=AGENT_NAME)
 class BaseOutputPayload(BaseModel):
     ''' Base class for Parsed Outputs. Add fields to this base output class. 
     By default, error field is included. 
@@ -38,7 +47,7 @@ class BaseOutputPayload(BaseModel):
                        for field in cls.model_fields if field != 'error'}
         return json.dumps(output_dict, indent=4)  # Use json.dumps to format it neatly
     
-prompt_registry.register(name=AGENT_NAME)
+@prompt_registry.register(name=AGENT_NAME)
 class BasePromptTemplate(ABC):
     """PromptTemplate ABC protocol for all prompts to follow. Use ABC since we want to be strict 
     with how prompts are handled and inherited, and inherit methods
@@ -80,7 +89,6 @@ class BasePromptTemplate(ABC):
         """
         self.chat_template.format(**kwargs)
 
-    @abstractmethod
     def postprocess(self, responses: list[str]) -> list[str]:
         """Postprocess the responses.
 
