@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from enum import Enum
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum):
@@ -26,7 +26,7 @@ class VLLMGeneratorConfig(BaseConfig):
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str = ModelType.MISTRAL7B
+    llm_name: str = ModelType.MISTRAL7B.value
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
@@ -67,7 +67,7 @@ class VLLMGenerator(BaseLLMGenerator):
         self.sampling_params = SamplingParams(
             temperature=config.temperature,
             max_tokens=config.max_tokens,
-            use_beam_search=config.use_beam_search,
+            # use_beam_search=config.use_beam_search,
             **sampling_kwargs,
         )
 

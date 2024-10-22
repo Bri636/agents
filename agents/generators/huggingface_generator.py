@@ -10,7 +10,7 @@ from pydantic import Field
 from peft import LoraModel, LoraConfig, get_peft_model
 
 from agents.generators.base_generator import BaseLLMGenerator
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 
 PathLike = Union[str, Path]
 

@@ -7,7 +7,7 @@ from pydantic import Field
 from pathlib import Path
 from enum import Enum
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum): 

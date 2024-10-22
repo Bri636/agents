@@ -6,7 +6,7 @@ from typing import Protocol
 
 from abc import ABC, abstractmethod
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 
 class BaseLLMGenerator(Protocol):
     """Generator protocol for all generators to follow."""

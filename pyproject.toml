@@ -43,7 +43,8 @@ dependencies = [
     "trl", 
     "parsl", 
     "autogen", 
-    "vllm"
+    "vllm", 
+    "ollama"
 ]
 
 [project.urls]

@@ -6,7 +6,7 @@ from typing import Protocol, Callable, Optional, Any, TypeVar, Type, Union, runt
 from abc import ABC, abstractmethod
 from functools import singledispatch
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 from agents.prompts.base_prompt import BasePromptTemplate
 

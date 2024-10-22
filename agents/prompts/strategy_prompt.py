@@ -5,43 +5,47 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from textwrap import dedent
 from enum import Enum
-from typing import Literal, Union, Optional
-from pydantic import BaseModel
+from typing import Literal, Union, Optional, Any
+from pydantic import BaseModel, Field
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 from agents.prompts.base_prompt import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
+from agents import prompt_registry
 
-class StrategyPromptTemplateConfig(BaseConfig):
-    """Configuration for the StrategyPromptTemplate"""
-    _name: Literal['strategy'] = 'strategy'  # type: ignore[assignment]
+PROMPT_NAME = 'Strategist'
 
-# class StrategyPayload(BasePayload): 
+class StrategyInputPayload(BaseOutputPayload): 
+    """ Outputs to present to the strategy """
+    task: str
+    context: str
     
-#     task: str = Fiel
-
+class StrategyOutputPayload(BaseOutputPayload): 
+    """ Output format """
+    strategy: str 
+    
+@prompt_registry.register(name=PROMPT_NAME, payloads={
+    'input': StrategyInputPayload, 
+    'output': StrategyOutputPayload
+})
 class StrategyPromptTemplate(BasePromptTemplate):
     """Question answer prompt template."""
 
     template_with_context: str = dedent('''
-                <s>[INST]
-                You are an intelligent strategist agent. You will be given a overall task / environment / world that you have to solve.
-                Come up with a plausable strategy for how you might want to navigate or solve your environment and
-                help you reach the goal. Your response must be some kind of strategy or thinking style, even if you have to guess
-                
-                Environment or Task: 
-                {environment_or_task}
-                [/INST]
-                ''')
+You are an intelligent strategist agent. You will be given an overall task or environment that you have to solve.
+Come up with a plausable strategy for how you might want to navigate or solve your environment and
+help you reach the goal. Your response must be some kind of strategy or thinking style, even if you have to guess. 
+Keep the strategy 
 
-    template_no_context: str = dedent('''
-                <s>[INST]
-                You are an intelligent strategist agent. You will be given a overall task / environment / world that you have to solve.
-                Come up with a plausable strategy for how you might want to navigate or solve your environment and
-                help you reach the goal. Your response must be some kind of strategy, even if you have to guess
-                [/INST]
-                ''')
+Environment or Task:
+=================== 
+{task}
 
-    def __init__(self, config: StrategyPromptTemplateConfig) -> None:
+Context: 
+========
+{context}
+''')
+
+    def __init__(self, config: Optional[Any]=None) -> None:
         """Initialize the QuestionAnswerPromptTemplate."""
         self.config = config
 

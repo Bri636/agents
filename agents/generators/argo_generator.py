@@ -18,7 +18,7 @@ from langchain_core.embeddings.embeddings import Embeddings
 from sqlalchemy import desc
 from langchain_core.prompts import PromptTemplate
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum):
