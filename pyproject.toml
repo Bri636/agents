@@ -42,7 +42,8 @@ dependencies = [
     "langchain_voyageai", 
     "trl", 
     "parsl", 
-    "autogen"
+    "autogen", 
+    "vllm"
 ]
 
 [project.urls]

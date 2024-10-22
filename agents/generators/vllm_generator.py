@@ -26,7 +26,7 @@ class VLLMGeneratorConfig(BaseConfig):
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str
+    llm_name: str = ModelType.MISTRAL7B
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
