@@ -16,7 +16,6 @@ from agents import output_payload_registry
 
 AGENT_NAME = 'Python' # name of the agent 
 
-@output_payload_registry.register(AGENT_NAME)
 class PythonOutputPayload(BaseOutputPayload): 
     
     reasoning: str = Field(
@@ -29,7 +28,6 @@ class PythonOutputPayload(BaseOutputPayload):
         default='None'
     ) 
 
-@input_payload_registry.register(AGENT_NAME)
 class PythonInputPayload(BaseInputPayload): 
     
     strategy: str = Field(
@@ -68,8 +66,6 @@ class PythonInputPayload(BaseInputPayload):
         self.previous_attempt = llm_output
         self.error = error
     
-
-@prompt_registry.register(AGENT_NAME)
 class PythonPrompt(BasePromptTemplate): 
     
     template: str = dedent('''

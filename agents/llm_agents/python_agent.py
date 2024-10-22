@@ -23,7 +23,6 @@ T = TypeVar('T')
 
 AGENT_NAME = 'Python'
 
-
 class PythonAgentMessage(BaseModel):
     ''' Container class for displaying agent messages based on success or failure '''
     success: bool
