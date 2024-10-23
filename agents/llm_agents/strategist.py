@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 '''Chain for action inference'''
 
+from __future__ import annotations
 from textwrap import dedent
 from pydantic import BaseModel, Field
 import torch

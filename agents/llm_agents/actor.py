@@ -1,38 +1,34 @@
-# from __future__ import annotations
+'''Chain for action inference'''
 
-# '''Chain for action inference'''
+from __future__ import annotations
+from textwrap import dedent
+from pydantic import BaseModel, Field
+import torch
+import numpy as np
+import pprint as pp
+import json
+import lightning as pl
 
-# from textwrap import dedent
-# from pydantic import BaseModel, Field
-# import torch
-# import numpy as np
-# import pprint as pp
-# import json
-# import lightning as pl
+from typing import Protocol, Callable, Optional, Any, TypeVar, Union, runtime_checkable, Tuple
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from enum import Enum
+from pydantic import BaseModel, computed_field, Field
+from dataclasses import dataclass, field
 
-# from typing import Protocol, Callable, Optional, Any, TypeVar, Union, runtime_checkable, Tuple
-# from abc import ABC, abstractmethod
-# from copy import deepcopy
-# from enum import Enum
-# from pydantic import BaseModel, computed_field, Field
-# from dataclasses import dataclass, field
+from agents.utils import BaseConfig
+from agents.generators.base_generator import BaseLLMGenerator
+from agents.prompts.base_prompt import BasePromptTemplate
+from agents.parsers import LLMOutputParser
 
-# from agents.configs import BaseConfig
-# from agents.generators.base_generator import BaseLLMGenerator
-# from agents.prompts.base_prompt import BasePromptTemplate
-# from agents.llm_agents.base_action_agent import BaseActionAgent
+from agents.prompts.strategy_prompt import (StrategyInputPayload,
+                                            StrategyOutputPayload,
+                                            StrategyPromptTemplate)
+from agents import agent_registry
 
-# from agents.prompts.python_prompt import PythonInputPayload, PythonPrompt, PythonOutputPayload
-# from agents.parsers import LLMOutputParser
+T = TypeVar('T')
 
-# from agents import action_agent_registry
-
-# T = TypeVar('T')
-
-# AGENT_NAME = 'LactChainActor'
-
-# _T = TypeVar('_T')
-
+AGENT_NAME = 'Actor'
 
 # class LactChainAgentMessage(BaseModel):
 #     ''' Container class for displaying agent messages based on success or failure '''

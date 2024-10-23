@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from abc import ABC
 from abc import abstractmethod
 
@@ -13,9 +15,8 @@ except ImportError:
 from typing import Sequence
 from typing import Union
 
-from pathlib import Path
-
 from parsl.addresses import address_by_hostname
+from parsl.addresses import address_by_interface
 from parsl.config import Config
 from parsl.executors import HighThroughputExecutor
 from parsl.launchers import MpiExecLauncher
@@ -24,7 +25,7 @@ from parsl.providers import LocalProvider
 from parsl.providers import PBSProProvider
 from parsl.providers import SlurmProvider
 
-from agents.configs import BaseConfig
+from agents.utils import BaseConfig
 
 PathLike = Union[str, Path]
 
@@ -51,7 +52,7 @@ class BaseComputeConfig(BaseConfig, ABC):
 class LocalConfig(BaseComputeConfig):
     """Configuration for a local machine (mainly for testing purposes)."""
 
-    name: Literal['local'] = 'local'  # type: ignore[assignment]
+    # name: Literal['local'] = 'local'  # type: ignore[assignment]
     max_workers: int = 1
     cores_per_worker: float = 0.0001
     worker_port_range: tuple[int, int] = (10000, 20000)
@@ -66,7 +67,7 @@ class LocalConfig(BaseComputeConfig):
                 HighThroughputExecutor(
                     address='localhost',
                     label=self.label,
-                    max_workers=self.max_workers,
+                    max_workers_per_node=self.max_workers,
                     cores_per_worker=self.cores_per_worker,
                     worker_port_range=self.worker_port_range,
                     provider=LocalProvider(init_blocks=1, max_blocks=1),
@@ -78,9 +79,9 @@ class LocalConfig(BaseComputeConfig):
 class WorkstationConfig(BaseComputeConfig):
     """Configuration for a workstation with GPUs."""
 
-    name: Literal['workstation'] = 'workstation'  # type: ignore[assignment]
+    # name: Literal['workstation'] = 'workstation'  # type: ignore[assignment]
     """Name of the platform."""
-    available_accelerators: Union[int, Sequence[str]] = 8  # noqa: UP007
+    available_accelerators: Union[int, Sequence[str]] = 4  # noqa: UP007
     """Number of GPU accelerators to use."""
     worker_port_range: tuple[int, int] = (10000, 20000)
     """Port range."""
@@ -94,7 +95,8 @@ class WorkstationConfig(BaseComputeConfig):
             retries=self.retries,
             executors=[
                 HighThroughputExecutor(
-                    address=address_by_hostname(),
+                    # address=address_by_hostname(),
+                    address=address_by_interface("bond0"),
                     label=self.label,
                     cpu_affinity='block',
                     available_accelerators=self.available_accelerators,
@@ -182,15 +184,15 @@ class PolarisConfig(BaseComputeConfig):
 
     num_nodes: int = 1
     """Number of nodes to request"""
-    worker_init: str = ''
+    worker_init: str = 'module use /soft/modulefiles; module load conda; conda activate world_models; cd /lus/eagle/projects/FoundEpidem/bhsu/2024_research/world_models/world_models/'
     """How to start a worker. Should load any modules and environments."""
     scheduler_options: str = '#PBS -l filesystems=home:eagle:grand'
     """PBS directives, pass -J for array jobs."""
-    account: str
+    account: str = 'FoundEpidem'
     """The account to charge compute to."""
-    queue: str
+    queue: str = 'debug'
     """Which queue to submit jobs to, will usually be prod."""
-    walltime: str
+    walltime: str = '1:00:00'
     """Maximum job time."""
     cpus_per_node: int = 32
     """Up to 64 with multithreading."""
@@ -211,6 +213,7 @@ class PolarisConfig(BaseComputeConfig):
         run_dir: PathLike
             Directory in which to store Parsl run files.
         """
+        print('Getting Polaris Config')
         return Config(
             executors=[
                 HighThroughputExecutor(

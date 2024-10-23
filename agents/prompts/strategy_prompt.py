@@ -16,12 +16,12 @@ PROMPT_NAME = 'Strategist'
 
 class StrategyInputPayload(BaseOutputPayload): 
     """ Outputs to present to the strategy """
-    task: str
-    context: str
+    task: str = None
+    context: str = None
     
 class StrategyOutputPayload(BaseOutputPayload): 
     """ Output format """
-    strategy: str 
+    strategy: str = None
     
 @prompt_registry.register(name=PROMPT_NAME, payloads={
     'input': StrategyInputPayload, 

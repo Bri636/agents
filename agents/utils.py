@@ -11,6 +11,8 @@ from typing import TypeVar
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel
+from torch import Tensor
+import torch
 
 PathLike = Union[str, Path]
 
@@ -108,3 +110,28 @@ def batch_data(data: list[T], chunk_size: int) -> list[list[T]]:
     if len(data) > chunk_size * len(batches):
         batches.append(data[len(batches) * chunk_size :])
     return batches
+
+
+def calculate_returns(rewards: Tensor, gamma: float) -> Tensor:
+    '''
+    Inputs: 
+    ======
+    rewards: Tensor
+        Shape (B, T = sequence length) of raw rewards
+
+    Outputs: 
+    =======
+    rewards: Tensor 
+        Shape (B, ) of raw returns from discounted sum 
+    '''
+    B, T = rewards.shape  # Get batch size (B) and trajectory length (T)
+    # Initialize returns with the same shape as rewards
+    returns = torch.zeros_like(rewards)
+
+    for b in range(B):
+        R = torch.tensor(0.0, device=rewards.device)
+        for t in reversed(range(T)):
+            R = rewards[b, t] + gamma * R
+            returns[b, t] = R
+
+    return returns[:, 0]  # Return the first return G_0 for each episode

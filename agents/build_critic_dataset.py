@@ -23,19 +23,19 @@ def construct_strategy_agent(agent_name: str,
     ''' Function that initializes action agent from registry and other components '''
     action_agent_cls, cls_container, cls_payload = agent_registry.get(
         agent_name).values()
+    
+    prompt_template_cls, payloads = prompt_registry.get(agent_name).values()
+    input_payload_cls, output_payload_cls = payloads.values()
 
-    input_payload_cls, output_payload_cls = prompt_registry.get(
-        agent_name).values()
-    breakpoint()
     # make new fields to make them
     cls_payload['llm_output_parser'] = parser
     cls_payload['solver'] = solver
+    cls_payload['prompt_template_cls'] = prompt_template_cls
     cls_payload['input_payload_cls'] = input_payload_cls
     cls_payload['output_payload_cls'] = output_payload_cls
     
     cls_payload = cls_container(**cls_payload)
     agent = action_agent_cls(generator=generator, **asdict(cls_payload))
-    
     input_payload_cls = asdict(cls_payload).get('input_payload_cls')
 
     return input_payload_cls(), agent
@@ -53,7 +53,6 @@ def parse_args() -> Any:
 
     args = parser.parse_args()
     return args
-
 
 def main():
     from agents import agent_registry, prompt_registry
@@ -74,6 +73,8 @@ def main():
                                                     generator,
                                                     parser
                                                     )
+    
+    
     
     breakpoint()
     
