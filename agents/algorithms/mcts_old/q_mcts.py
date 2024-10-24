@@ -10,9 +10,9 @@ from bigtree.utils import exceptions
 import gymnasium as gym
 from torch import nn
 
-from agents.algorithms.mcts.base_text import BaseNode
+from agents.algorithms.mcts_old.base_text import BaseNode
 from agents.algorithms.bandits.epsilon import EpsilonDeepQGreedy
-from agents.algorithms.mcts.q_functions import DeepQImage
+from agents.algorithms.mcts_old.q_functions import DeepQImage
 
 T = TypeVar('T')
 

@@ -32,10 +32,10 @@ class LLMOutputParser:
 
         except Exception as e:
             parsed_output = {'error': e}
-            filled_payload: dict[str, None] = {
-                k: None for k, _ in
-                list(self.output_cls.model_fields.keys())}
-            parsed_output.update(filled_payload)
+            # filled_payload: dict[str, None] = {
+            #     k: None for k, _ in
+            #     list(self.output_cls.model_fields.keys())}
+            # parsed_output.update(filled_payload)
 
             return False, parsed_output
         

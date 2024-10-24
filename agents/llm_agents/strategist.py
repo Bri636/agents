@@ -24,26 +24,12 @@ from agents.parsers import LLMOutputParser
 from agents.prompts.strategy_prompt import (StrategyInputPayload,
                                             StrategyOutputPayload,
                                             StrategyPromptTemplate)
+from agents.llm_agents.agent_utils import LactChainAgentMessage
 from agents import agent_registry
 
 T = TypeVar('T')
 
 AGENT_NAME = 'Strategist'
-
-class LactChainAgentMessage(BaseModel):
-    ''' Container class for displaying agent messages based on success or failure '''
-    success: bool
-    num_tries: int
-    task: str
-    code: str
-
-    @computed_field
-    @property
-    def message(self) -> str:
-        if self.success:
-            return f'Agent successfully generated code for task {self.task} in {self.num_tries} tries!'
-        else:
-            return f'Agent unsuccessfully generated code for task {self.task} in {self.num_tries} :('
 
 
 class GenerationConfig(BaseConfig):
@@ -105,7 +91,7 @@ class LactChainStrategyChain:
     def __init__(self,
                  generation_config: GenerationConfig,
                  generator: BaseLLMGenerator,
-                 prompt_template_cls: BasePromptTemplate,
+                 prompt_template_cls: StrategyPromptTemplate,
                  output_payload_cls: StrategyOutputPayload,
                  message_cls: Optional[LactChainAgentMessage],
                  llm_output_parser: Optional[Union[LLMOutputParser,
@@ -143,40 +129,27 @@ class LactChainStrategyChain:
         return self._prompt_template
 
     @prompt_template.setter
-    def prompt_template(self, new_prompt_template: BasePromptTemplate) -> None:
+    def prompt_template(self, new_prompt_template: StrategyPromptTemplate) -> None:
         self._prompt_template = new_prompt_template
 
-    def iteratively_generate(self, payload: StrategyInputPayload) -> Tuple[bool, str, StrategyOutputPayload, str]:
-        '''Converts agent payload into validly formatted outputs iteratively'''
+    def batch_generate(self, payloads: StrategyInputPayload | list[StrategyInputPayload]) -> list[str]:
+        ''' Generates a batch of raw llm_outputs, their organized output payloads, and bools 
+        for if they were successfully parsed or not.  '''
+        
+        if isinstance(payloads, StrategyInputPayload):
+            payloads = [payloads]
 
-        success, tries = False, 0
-        proxy_payload = deepcopy(payload)
-        task = proxy_payload.task
+        prompts = [self.prompt_template.preprocess(**payload.model_dump())
+                   for payload in payloads]
 
-        for tries in range(self.num_tries):
+        llm_outputs: list[str] = self.generator.generate(prompts)
 
-            success, llm_output, out_payload = self.generate(proxy_payload)
-            message = self.message_cls(
-                validation_success, tries, proxy_payload.task, out_payload.code)
+        # # Parse and create output payloads in one pass
+        # parsed_results: list[Tuple[bool, StrategyOutputPayload]] = [
+        #     (success, self.output_payload_cls(**parsed))
+        #     for success, parsed in map(self.llm_output_parser, llm_outputs)
+        # ]
 
-            if success:
-                if self.solver:
-                    # NOTE: you do not have a solver, so this will not trigger
-                    validation_success, validation_output = self.solver(
-                        out_payload)
-                    message = self.message_cls(
-                        validation_success, tries, proxy_payload.task, out_payload.code)
-                    if validation_success:
-                        break
-                    else:
-                        proxy_payload.update_code_error(
-                            validation_output.output, validation_output.error)
-                        print(
-                            f'Action agent output failed validation, re-prompting...') if self.verbose else None
-
-            else:
-                proxy_payload.update_code_error(llm_output, out_payload.error)
-                print(
-                    f'Action agent output in wrong format, re-prompting...') if self.verbose else None
-
-        return success, llm_output, out_payload, message
+        # sucesses, out_payloads = zip(*parsed_results)
+        
+        return llm_outputs 

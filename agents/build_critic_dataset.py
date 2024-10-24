@@ -6,24 +6,31 @@ from typing import Optional, Callable, Any, Tuple
 from argparse import ArgumentParser
 from dataclasses import asdict
 from functools import partial
+from textwrap import dedent
 
 from agents.registry import CoupledRegistry
 from agents.llm_agents.strategist import LactChainStrategyChain
+from agents.llm_agents.actor import LactChainActorChain
 from agents.prompts.base_prompt import BaseInputPayload
+
+from agents.prompts.strategy_prompt import StrategyInputPayload
+from agents.prompts.action_prompt import ActorInputPayload
 from agents.parsers import LLMOutputParser, get_parser
 from agents.generators import get_generator, BaseLLMGenerator
 
-def construct_strategy_agent(agent_name: str,
-                             agent_registry: CoupledRegistry,
-                             prompt_registry: CoupledRegistry,
-                             generator: BaseLLMGenerator,
-                             parser: LLMOutputParser,
-                             solver: Optional[Callable] = None,
-                             ) -> Tuple[BaseInputPayload, LactChainStrategyChain]:
-    ''' Function that initializes action agent from registry and other components '''
+
+def construct_agent(agent_name: str,
+                    agent_registry: CoupledRegistry,
+                    prompt_registry: CoupledRegistry,
+                    generator: BaseLLMGenerator,
+                    parser: Optional[LLMOutputParser] = None,
+                    solver: Optional[Callable] = None,
+                    ) -> Tuple[StrategyInputPayload | ActorInputPayload,
+                               LactChainStrategyChain | LactChainActorChain]:
+    ''' Function that initializes strategy agent from registry and other components '''
     action_agent_cls, cls_container, cls_payload = agent_registry.get(
         agent_name).values()
-    
+
     prompt_template_cls, payloads = prompt_registry.get(agent_name).values()
     input_payload_cls, output_payload_cls = payloads.values()
 
@@ -33,12 +40,13 @@ def construct_strategy_agent(agent_name: str,
     cls_payload['prompt_template_cls'] = prompt_template_cls
     cls_payload['input_payload_cls'] = input_payload_cls
     cls_payload['output_payload_cls'] = output_payload_cls
-    
+
     cls_payload = cls_container(**cls_payload)
     agent = action_agent_cls(generator=generator, **asdict(cls_payload))
     input_payload_cls = asdict(cls_payload).get('input_payload_cls')
 
-    return input_payload_cls(), agent
+    return input_payload_cls, agent
+
 
 def parse_args() -> Any:
     parser = ArgumentParser()
@@ -54,6 +62,7 @@ def parse_args() -> Any:
     args = parser.parse_args()
     return args
 
+
 def main():
     from agents import agent_registry, prompt_registry
 
@@ -67,18 +76,36 @@ def main():
     generator = get_generator(args.generator)
     parser = get_parser(args.parse_type)
 
-    input_payload, agent = construct_strategy_agent(args.agent_name,
-                                                    agent_registry,
-                                                    prompt_registry,
-                                                    generator,
-                                                    parser
-                                                    )
-    
+    strategy_payload_cls, strategist = construct_agent("Strategist",
+                                                       agent_registry,
+                                                       prompt_registry,
+                                                       generator,
+                                                       parser
+                                                       )
+    test_inputs = [{'task': 'You are solving a math problem',
+                    'context': dedent('''
+                    Find the gcd(20, 54)
+                    
+                    Return a strategy or thinking pattern you would use to solve this problem
+                    ''')}] * 16
+
+    input_payloads = [strategy_payload_cls(**test_input)
+                      for test_input in test_inputs]
+
+    llm_outputs = strategist.batch_generate(input_payloads)
+
+    breakpoint()
+
+    action_payload_cls, actor = construct_agent("Actor",
+                                                agent_registry,
+                                                prompt_registry,
+                                                generator,
+                                                parser
+                                                )
+
     
     
     breakpoint()
-    
-
 
 if __name__ == "__main__":
 

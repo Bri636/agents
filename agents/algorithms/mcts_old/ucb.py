@@ -8,7 +8,7 @@ import string
 import random
 import gymnasium as gym
 
-from agents.algorithms.mcts.base_text import BaseNode, BaseMCTS
+from agents.algorithms.mcts_old.base_text import BaseNode, BaseMCTS
 
 
 class UCBNode(BaseNode): 
