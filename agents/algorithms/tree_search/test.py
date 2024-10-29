@@ -6,7 +6,7 @@ from os import PathLike
 import pickle
 import math
 from copy import deepcopy
-from typing import Generic, Optional, NamedTuple, Callable, Hashable, Any, Literal
+from typing import Generic, Optional, NamedTuple, Callable, Hashable, Any, Literal, Tuple
 import itertools
 from abc import ABC
 from collections import defaultdict
@@ -17,16 +17,103 @@ import numpy as np
 from tqdm import trange
 import gymnasium as gym
 import random
+from textwrap import dedent
 from agents.environments.game import GymGame
 from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig, 
                                                 State, Action, Example, Trace)
-# from agents.algorithms.tree_search.mcts import MCTSNode, MCTSAggregation, MCTS
-
+from agents.utils import calculate_returns
 from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
 from agents.environments.game import DiscreteGymGame
 
 import gymnasium as gym 
 import ale_py
+
+class MCTSNode(Generic[State, Action, Example]):
+    
+    id_iter = itertools.count() # iterator; each next returns next step as int
+
+    @classmethod
+    def reset_id(cls):
+        cls.id_iter = itertools.count() 
+
+    def __init__(self, 
+                 state: Optional[State], 
+                 action: Optional[Action], 
+                 reward: float = None,
+                 parent: "Optional[MCTSNode]" = None,
+                 is_terminal: bool = False, 
+                 calc_q: Callable[[list[float]], float] = np.mean
+                 ) -> None:
+        """
+        A node in the MCTS search tree
+        
+        Inputs:
+        ======
+        :param state: the current state
+        :param action: the action of the last step, i.e., the action from parent node to current node
+        :param parent: the parent node, None if root of the tree
+        :param is_terminal: whether the current state is a terminal state
+        :param calc_q: the way to calculate the Q value from histories. Defaults: np.mean
+        
+        Internal: 
+        =========
+        :param cum_rewards: stores the cumulative rewards in each iteration of mcts ie. [tot_rewards_iter1, iter2, ]
+        :param reward: the one-off reward of the node during one iteration of mcts ie [100] from rollout in iter1
+        :param children: contains the children nodes
+        :param depth: depth of the node in the tree
+        
+        Note - Action_(t-1), State_(t), and Reward_(t) per Node
+        Note - root: Action = None, State_(0), Reward_(0) = None
+        """
+        self.id = next(MCTSNode.id_iter)
+        
+        self.cum_rewards: list[float] = [] # rewards from rollout
+        self.is_terminal = is_terminal
+        self.action = action
+        self.state = state
+        self.reward = reward
+        self.parent = parent
+        self.children: 'Optional[list[MCTSNode]]' = []
+        self.calc_q = calc_q
+        
+        # if no parent => root 
+        if parent is None:
+            self.depth = 0
+        else:
+            self.depth = parent.depth + 1 
+
+    # noinspection PyPep8Naming
+    @property
+    def Q(self) -> float:
+        return self.calc_q(self.cum_rewards)
+        
+    def __str__(self) -> str:
+        # Using rich to capture formatted string for __str__
+        console = Console(file=StringIO(), width=60)
+        table = Table(title=f"Node ID: {self.id}", show_header=True, header_style="bold cyan")
+        
+        table.add_column("Attribute", style="dim")
+        table.add_column("Value")
+        
+        table.add_row("State", str(self.state.shape))
+        table.add_row("Action", str(self.action))
+        table.add_row("Parent ID", str(self.parent.id if self.parent else "None"))
+        table.add_row("Q-Value", f"{self.reward:.2f}")
+        table.add_row("Reward", f"{self.Q:.2f}")
+        table.add_row("Number Children", f"{len(self.children)}")
+        console.print(table)
+        return console.file.getvalue()
+
+    def __repr__(self) -> str:
+        # Concise representation for __repr__
+        return dedent(f"""
+    MCTSNode(id={self.id}, 
+    state=dim:{self.state.shape}, 
+    action={self.action}, 
+    Q={self.Q:.2f}, 
+    reward={self.reward}, 
+    num_children={len(self.children)})
+    """)
 
 class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
     def __init__(self,
@@ -112,26 +199,27 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         return max(node.children, key=self._uct)
     
     def select(self, node: MCTSNode) -> list[MCTSNode]: 
-        ''' Goes through start node, and traverses via selecting best uct of children '''
+        ''' Goes through start node, and traverses via selecting best uct of children. If no children, return path as is '''
         path = []
-        while not self._is_terminal_with_depth_limit(node): 
+        while True: 
             path.append(node)
+            if self._is_terminal_with_depth_limit or len(node.children)==0: 
+                return path # NOTE: return if ...
             best_child = self._uct_select(node)
             node = best_child # set node as best child
-        return path
     
-    def expand(self, node: MCTSNode, environment: gym.Env, num_children: int) -> MCTSNode: 
-        """ Expands last node of path into d children """
-        action_space = list(range(environment.action_space.n))
+    def expand(self, node: MCTSNode, environment: GymGame | gym.Env, num_children: int) -> MCTSNode: 
+        """ Expands last node of path into d children and returns the node """
+        action_space = list(range(environment.action_cardinality))
         actions:list[int] = list(random.sample(action_space, num_children))
-        envs:list[GymGame] = [GymGame.get_copy() for _ in actions]
+        envs:list[GymGame] = [environment.get_copy() for _ in actions]
         
         children = []
         for action, env in zip(actions, envs): 
-            next_obs, reward, terminated, _, _ = env.step(action)
+            next_obs, reward, terminated, *_ = env.step(action)
             child = MCTSNode(state=next_obs, 
                              action=action, 
-                             reward=reward, 
+                             reward=None, # NOTE: we do not add reward to this node for now
                              parent=node, 
                              is_terminal=terminated, 
                              calc_q=self.calc_q)
@@ -143,59 +231,87 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
     
     def _single_rollout(self, 
                         node: MCTSNode, 
-                        environment: gym.Env, 
+                        environment: gym.Env | GymGame, 
                         strategy: Literal['random', 'policy']='random', 
                         max_tries: int = 10
-                        ): 
-        """ Runs a full rollout on a single child node """
+                        ) -> MCTSNode: 
+        """ Runs a full rollout on a single child node and returns the node with reward attr set to the cumulative rewards from rollout """
         def episode_stop_condition(step: int, terminated: bool) -> bool: 
+            """ True if max_tries exceeded or terminal"""
             return bool(step > max_tries or terminated)
         
-        action_space = list(range(environment.action_space.n)) 
+        if isinstance(environment, GymGame): 
+            action_space = list(range(environment.action_cardinality))
+        else: 
+            action_space = list(range(environment.action_space.n)) 
+            
         step = 0
         terminated = False
         rewards = []
         while not episode_stop_condition(step, terminated):
-            if strategy is 'random': 
-                action = random.sample(action_space, 1)
-            elif strategy is 'policy': 
+            if strategy == 'random': 
+                action = random.sample(action_space, 1)[0]
+            elif strategy == 'policy': 
                 action = ...
-                
-            next_obs, reward, terminated, _, _ = environment.step(action)
-            
+            next_obs, reward, terminated, *_ = environment.step(action)
             rewards.append(reward)
             obs = next_obs
             
-        node.cum_rewards = rewards
+        node.reward = sum(rewards) # make node.reward = sum of rewards collected during the rollout
         
         return node
         
     def simulate(self, 
-                 nodes: MCTSNode | list[MCTSNode], 
+                 node: MCTSNode, 
                  environment: gym.Env,
                  strategy: Literal['random', 'policy']='random', 
                  max_tries: int = 100
-                 ) -> list[MCTSNode]: 
-        """ Perform rollout on d nodes, 1 <= d <= cardinality-action_space """ 
-        if isinstance(nodes, list): 
-            nodes = [MCTSNode]
-            
-        rollouts_args:list[dict] = [{
-            'node': node, 
-            'environment': environment, 
-            'strategy': strategy, 
-            'max_tries': max_tries
-            } for node in nodes]
-            
-        simulated_nodes = [self._single_rollout(**arg) for arg in rollouts_args]
-            
-        return simulated_nodes
+                 ) -> MCTSNode: 
+        """ 
+        Perform a rollout on the selected child node, and return the simulated node with update rollout reward
+        
+        Notes:
+        =====
+        1 <= d <= cardinality-action_space 
+        """ 
+        rollout_args: dict = {
+        'node': node, 
+        'environment': environment, 
+        'strategy': strategy, 
+        'max_tries': max_tries
+        }
+        simulated_node = self._single_rollout(**rollout_args)
+
+        return simulated_node
     
-    def backpropagate(self) -> None: 
-        return ...
+    def back_propagate(self, path: list[MCTSNode], child_idx: int) -> float:
+        """ 
+        Updates each node in the path with the cumulative rewards from rollout and returns the updated path and the cum_reward for the root 
+        
+        ex. leaf node gets rollout reward 
+        leaf node - 1 gets rollout reward + own reward 
+        leaf node - 2 gets rollout reward + leaf node -1 + own reward 
+        ...
+        
+        :param path - list[MCTSNode]: list of nodes corresponding to search path 
+        :param child_idx - int: Inside the leaf node, the idx of its expanded child node we simulated
+        """
+        cum_reward_func: Callable[[list[float]], float] = self.cum_reward # way to calculate the cumulative reward from each step. Defaults: sum
+        path.append(path[-1].children[child_idx])
+        
+        rewards = [] # holds rewards for each node
+        cum_reward = -math.inf
+        for node in reversed(path): # leaf --> root
+            rewards.append(node.reward) # ex. leaf: rewards = [100]; leaf-1: rewards = [100, 10]; leaf-2: rewards = [100, 10, 15], ...
+
+            # NOTE: work-around for node.reward = None => we filter this out 
+            rewards = list(filter(lambda x: x != None, rewards))
+            cum_reward = cum_reward_func(rewards[::-1]) # self.cum_rewards callable sum; ex. sum([10, 100]), sum([15, 10, 100])
+            node.cum_rewards.append(cum_reward) # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
+            
+        return path, cum_reward
     
     def iterate(self): 
-        
         return ...
 
 if __name__=="__main__": 
@@ -203,15 +319,21 @@ if __name__=="__main__":
     gym.register_envs(ale_py)
     env = gym.make("ALE/AirRaid-v5")
     env = DiscreteGymGame(env)
-    action_space_cardinality = len(env.env.action_space.n)
+    A = env.action_cardinality
     obs, info = env.reset()
     
     root = MCTSNode(state=obs, action=None)
     mcts = MCTS()
-    
+
+    opt_path: list[MCTSNode] = mcts.select(root)
+    opt_path[-1] = mcts.expand(opt_path[-1], env, A) # expand the leaf node 
+    node_idx = random.sample(range(len(opt_path[-1].children)), 1)[0]
     breakpoint()
-    opt_path = mcts.select(root)
-    opt_path[-1] = mcts.expand(opt_path[-1], env, action_space_cardinality) # expand the leaf node 
-    opt_path[-1] = mcts.simulate(opt_path[-1], env, 'random', max_tries=10)
+    simulated_child: MCTSNode = mcts.simulate(opt_path[-1].children[node_idx], env, 'random', max_tries=10)
+    opt_path[-1].children[node_idx] = simulated_child
+    breakpoint()
+    opt_path, cum_reward = mcts.back_propagate(opt_path, node_idx)
+    breakpoint()
+    
     
     

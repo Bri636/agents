@@ -116,6 +116,10 @@ class GymGame(DeepCopyableGame, metaclass=abc.ABCMeta):
 
     def __str__(self):
         return str(self.env).split('<')[-1].split('>')[0].split(' ')[0]
+    
+    @property 
+    def action_cardinality(self) -> int: 
+        return self.env.action_space.n
 
 
 class DiscreteGymGame(GymGame):

@@ -16,7 +16,7 @@ from io import StringIO
 import numpy as np
 from tqdm import trange
 import gymnasium as gym
-
+from textwrap import dedent
 from agents.environments.game import GymGame
 from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig, 
                                                 State, Action, Example, Trace)
@@ -39,12 +39,21 @@ class MCTSNode(Generic[State, Action, Example]):
                  ) -> None:
         """
         A node in the MCTS search tree
-
+        
+        Inputs:
+        ======
         :param state: the current state
         :param action: the action of the last step, i.e., the action from parent node to current node
         :param parent: the parent node, None if root of the tree
         :param is_terminal: whether the current state is a terminal state
         :param calc_q: the way to calculate the Q value from histories. Defaults: np.mean
+        
+        Internal: 
+        =========
+        :param cum_rewards: stores the cumulative rewards in each iteration of mcts ie. [tot_rewards_iter1, iter2, ]
+        :param reward: the one-off reward of the node during one iteration of mcts ie [100] from rollout in iter1
+        :param children: contains the children nodes
+        :param depth: depth of the node in the tree
         
         Note - Action_(t-1), State_(t), and Reward_(t) per Node
         Note - root: Action = None, State_(0), Reward_(0) = None
@@ -89,7 +98,13 @@ class MCTSNode(Generic[State, Action, Example]):
 
     def __repr__(self) -> str:
         # Concise representation for __repr__
-        return f"MCTSNode(id={self.id}, state=dim:{self.state.shape}, action={self.action}, Q={self.Q:.2f}), num_children={len(self.children)}"
+        return dedent(f"""
+    MCTSNode(id={self.id}, 
+    state=dim:{self.state.shape}, 
+    action={self.action}, 
+    Q={self.Q:.2f}, 
+    reward={self.reward}, 
+    num_children={len(self.children)})""")
     
 class MCTSResult(NamedTuple):
     """ Simple Container Class for MCTS Output """

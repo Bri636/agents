@@ -167,8 +167,8 @@ class AlgorithmOutput(Protocol[State]):
 class SearchAlgorithm(ABC):
     def __init__(self, **kwargs): ...
 
-    @abstractmethod
-    def __call__(self, world_model: WorldModel, search_config: SearchConfig, **kwargs) -> AlgorithmOutput: ...
+    # @abstractmethod
+    # def __call__(self, world_model: WorldModel, search_config: SearchConfig, **kwargs) -> AlgorithmOutput: ...
 
 
 class Reasoner(ABC, Generic[State, Action, Example]):
