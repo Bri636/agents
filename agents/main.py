@@ -10,7 +10,7 @@ from agents import prompts
 
 from agents.llm_agents import BaseActionAgent
 from agents.prompts import ActionAgentPrompts, ActionAgentInputPayloads, ActionAgentOutputPayloads
-from agents.prompts.base_prompt import BaseInputPayload
+from agents.prompts.base_prompt_template import BaseInputPayload
 from agents.parsers import LLMOutputParser, get_parser
 from agents.generators import get_generator, BaseLLMGenerator
 '''

@@ -9,14 +9,14 @@ from copy import deepcopy
 from enum import Enum
 from pydantic import BaseModel, computed_field, Field
 from dataclasses import dataclass, field
+from functools import partialmethod
 
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
-from agents.prompts.base_prompt import BasePromptTemplate
+from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.parsers import LLMOutputParser
 
-from agents.prompts.action_prompt import (ActorInputPayload,
-                                          ActorOutputPayload,
+from agents.prompts.action_prompt_template import (ActorInputPayload,
                                           ActorPromptTemplate)
 from agents.llm_agents.agent_utils import LactChainAgentMessage
 from agents import agent_registry
@@ -25,10 +25,12 @@ T = TypeVar('T')
 
 AGENT_NAME = 'Actor'
 
+
 class GenerationConfig(BaseConfig):
     ''' Settings for how agent should generate output '''
     verbose: bool = False
     num_tries: int = 5
+
 
 @dataclass  # I use dataclass since pydantic seems to cause error for non-basemodel classes
 class LactChainActorAgentContainer:
@@ -50,17 +52,9 @@ class LactChainActorAgentContainer:
         default=None,
         metadata='optional: parser that parses action agent output into objects like a dict'
     )
-    solver: Optional[Union[Callable]] = field(
-        default=None,
-        metadata='optional: solver that maps parsed outputs into a predefined set of actions such as in alpha-proof'
-    )
     input_payload_cls: ActorInputPayload = field(
         default=None,
         metadata='Payload container that forms inputs for the agent'
-    )
-    output_payload_cls: ActorOutputPayload = field(
-        default=None,
-        metadata='Payload container that forms outputs from the agent'
     )
     message_cls: LactChainAgentMessage = field(
         default=None,
@@ -70,6 +64,7 @@ class LactChainActorAgentContainer:
     def __post_init__(self) -> None:
         pass
 
+
 @agent_registry.register(AGENT_NAME,
                          cls_container=LactChainActorAgentContainer,
                          cls_payload={
@@ -78,30 +73,26 @@ class LactChainActorAgentContainer:
                          })
 class LactChainActorChain:
     ''' Chain for converting strategies into actions '''
-    
+
     def __init__(self,
                  generation_config: GenerationConfig,
                  generator: BaseLLMGenerator,
                  prompt_template_cls: ActorPromptTemplate,
-                 llm_output_parser: Optional[Union[LLMOutputParser, Callable]],
-                 solver: Optional[Union[Callable]],
-                 output_payload_cls: ActorOutputPayload,
-                 message_cls: Optional[LactChainAgentMessage],
+                 llm_output_parser: Optional[Union[LLMOutputParser, Callable]] = None,
+                 message_cls: Optional[LactChainAgentMessage] = None,
                  **kwargs
                  ) -> None:
-        
+
         self._generator = generator
         self._prompt_template = prompt_template_cls()
 
         self.llm_output_parser = llm_output_parser
-        self.solver = solver
-        self.output_payload_cls = output_payload_cls
         self.message_cls = message_cls
 
         generation_config = generation_config()
         self.verbose = generation_config.verbose
         self.num_tries = generation_config.num_tries
-        
+
     @property
     def generator(self):
         return self._generator
@@ -109,7 +100,8 @@ class LactChainActorChain:
     @generator.setter
     def generator(self, new_generator: str) -> None:
         '''Swap backends then update rest of agent'''
-        print(f'Swapping generator mode from {self.generator} ===> {new_generator}')
+        print(
+            f'Swapping generator mode from {self.generator} ===> {new_generator}')
         self._generator = new_generator  # property that allows us to swap out backend
 
     @property
@@ -119,10 +111,9 @@ class LactChainActorChain:
     @prompt_template.setter
     def prompt_template(self, new_prompt_template: BasePromptTemplate) -> None:
         self._prompt_template = new_prompt_template
-        
-    def generate(self, payloads: ActorInputPayload | list[ActorInputPayload]) -> Tuple[list[bool], 
-                                                                                       list[str], 
-                                                                                       list[ActorOutputPayload]]:
+
+    def batch_generate(self, payloads: ActorInputPayload
+                       | list[ActorInputPayload]) -> list[dict[str, Any]]:
         '''Function that runs llm with payload and prompt, then parses it and returns parsing result
         with success flag as bool...For now, just grab first element from list
 
@@ -135,28 +126,22 @@ class LactChainActorChain:
         parsed: dict[str, Any]
             Parsed code or {'error': Exception message}
         '''
-        if isinstance(payloads, ActorInputPayload): 
+        if isinstance(payloads, ActorInputPayload):
             payloads = [payloads]
-        
-        prompts = [self.prompt_template.preprocess(**payload.model_dump()) 
+
+        prompts = [self.prompt_template.preprocess(**payload.model_dump())
                    for payload in payloads]
-        
         llm_outputs: list[str] = self.generator.generate(prompts)
-        parsed_tuple: list[Tuple[bool, dict]] = list(
-            map(lambda x: self.llm_output_parser(x), llm_outputs)
-            )
-        
-        sucesses = []
-        out_payloads = []
-        for (success, parsed) in parsed_tuple: 
-            out_payload = self.output_payload_cls(**parsed)
-            sucesses.append(success)
-            out_payloads.append(out_payload)
-            
-        return sucesses, llm_outputs, out_payloads 
-        
+        # parsed_tuple: list[Tuple[bool, dict]] = [
+        #     self.llm_output_parser(llm_output) for llm_output in llm_outputs
+        # ]
+        # parsed_outputs: dict[str, Any] = [parsed for (success, parsed)
+        #                                   in parsed_tuple if success is True]
+
+        parsed_outputs = llm_outputs
+        return parsed_outputs
+
         # success, parsed = ...
-        
         # prompt = self.prompt_template.preprocess(**payloads.model_dump())
         # llm_output = self.generator.generate(prompt)[0]
         # success, parsed = self.llm_output_parser(llm_output)

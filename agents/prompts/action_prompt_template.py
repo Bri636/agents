@@ -9,44 +9,58 @@ from typing import Literal, Union, Optional, Any
 from pydantic import BaseModel, Field
 
 from agents.utils import BaseConfig
-from agents.prompts.base_prompt import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
+from agents.prompts.base_prompt_template import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
 from agents import prompt_registry
 
-PROMPT_NAME = 'Strategist'
+PROMPT_NAME = 'Actor'
 
-class StrategyInputPayload(BaseInputPayload): 
-    """ Outputs to present to the strategy 
-    
-    :task - str: overall description of the task
-    :context - str: extra context for the llm
+class Instructions(Enum): 
+    ''' Instructions for parsing outputs'''
+    COT = dedent('''
+    Given a question, please decompose it into sub-questions. 
+    For each sub-question, please answer it in a complete sentence, ending with \"The answer is\". 
+    When the original question is answerable, please start the subquestion with \"Now we can answer the question: \".''')
+
+class ActorInputPayload(BaseOutputPayload): 
+    """ Outputs to present to the strategy
+    :goal - str: overall goal that you are doing. for gsm8k, this is 'You are solving math problems'
+    :instruction - str: any instructions that the LLM should do for parsing. for gsm8k, this it the COT instruction
+    :task - str: description of task to do. for gsm8k, this is the question.
+    :strategy - str: a high-level strategy produced by strategy chain. this is the mutated prompt
     """
-    task: str = None
-    context: str = None
+    goal: str = "None"
+    task: str = "None"
+    strategy: str = "None"
+    instruction: str = "None"
     
-class StrategyOutputPayload(BaseOutputPayload): 
+class ActorOutputPayload(BaseOutputPayload): 
     """ Output format """
-    strategy: str = None
+    reasoning: str = "None"
+    action: str = "None"
     
 @prompt_registry.register(name=PROMPT_NAME, payloads={
-    'input': StrategyInputPayload, 
-    'output': StrategyOutputPayload
+    'input': ActorInputPayload
 })
-class StrategyPromptTemplate(BasePromptTemplate):
+class ActorPromptTemplate(BasePromptTemplate):
     """Question answer prompt template."""
 
     template: str = dedent('''
-You are an intelligent strategist agent. You will be given an overall task or environment that you have to solve.
-Come up with a plausable strategy for how you might want to navigate or solve your environment and
-help you reach the goal. Your response must be some kind of strategy or thinking style, even if you have to guess. 
-Keep the strategy 
+Goal: 
+=====
+{goal}
 
-Environment or Task:
-=================== 
+Instructions: 
+===========
+{instruction}
+
+Task:
+=====
 {task}
 
-Context: 
-========
-{context}
+Strategies:
+=========
+{strategy}
+
 ''')
 
     def __init__(self, config: Optional[Any]=None) -> None:
@@ -56,7 +70,7 @@ Context:
     def preprocess(
         self,
         **kwargs
-        ) -> list[str]:
+        ) -> str:
         """Preprocess the text into prompts.
 
         Parameters
@@ -69,7 +83,6 @@ Context:
         list[str]
             The formatted prompts.
         """
-
         # Build the prompts using the template
         return self.template.format(**kwargs)
 

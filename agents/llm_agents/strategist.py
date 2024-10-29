@@ -18,10 +18,10 @@ from dataclasses import dataclass, field
 
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
-from agents.prompts.base_prompt import BasePromptTemplate
+from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.parsers import LLMOutputParser
 
-from agents.prompts.strategy_prompt import (StrategyInputPayload,
+from agents.prompts.strategy_prompt_template import (StrategyInputPayload,
                                             StrategyOutputPayload,
                                             StrategyPromptTemplate)
 from agents.llm_agents.agent_utils import LactChainAgentMessage
@@ -58,17 +58,9 @@ class LactChainStrategyAgentContainer:
         default=None,
         metadata='optional: parser that parses action agent output into objects like a dict'
     )
-    solver: Optional[Union[Callable]] = field(
-        default=None,
-        metadata='optional: solver that maps parsed outputs into a predefined set of actions such as in alpha-proof'
-    )
     input_payload_cls: StrategyInputPayload = field(
         default=None,
         metadata='Payload container that forms inputs for the agent'
-    )
-    output_payload_cls: StrategyOutputPayload = field(
-        default=None,
-        metadata='Payload container that forms outputs from the agent'
     )
     message_cls: LactChainAgentMessage = field(
         default=None,
@@ -92,11 +84,9 @@ class LactChainStrategyChain:
                  generation_config: GenerationConfig,
                  generator: BaseLLMGenerator,
                  prompt_template_cls: StrategyPromptTemplate,
-                 output_payload_cls: StrategyOutputPayload,
                  message_cls: Optional[LactChainAgentMessage],
                  llm_output_parser: Optional[Union[LLMOutputParser,
                                                    Callable]] = None,
-                 solver: Optional[Union[Callable]] = None,
                  **kwargs
                  ) -> None:
 
@@ -104,8 +94,6 @@ class LactChainStrategyChain:
         self._prompt_template = prompt_template_cls()
 
         self.llm_output_parser = llm_output_parser
-        self.solver = solver
-        self.output_payload_cls = output_payload_cls
         self.message_cls = message_cls
 
         generation_config = generation_config()
@@ -135,21 +123,12 @@ class LactChainStrategyChain:
     def batch_generate(self, payloads: StrategyInputPayload | list[StrategyInputPayload]) -> list[str]:
         ''' Generates a batch of raw llm_outputs, their organized output payloads, and bools 
         for if they were successfully parsed or not.  '''
-        
         if isinstance(payloads, StrategyInputPayload):
             payloads = [payloads]
-
+            
         prompts = [self.prompt_template.preprocess(**payload.model_dump())
                    for payload in payloads]
-
+        
         llm_outputs: list[str] = self.generator.generate(prompts)
-
-        # # Parse and create output payloads in one pass
-        # parsed_results: list[Tuple[bool, StrategyOutputPayload]] = [
-        #     (success, self.output_payload_cls(**parsed))
-        #     for success, parsed in map(self.llm_output_parser, llm_outputs)
-        # ]
-
-        # sucesses, out_payloads = zip(*parsed_results)
         
         return llm_outputs 

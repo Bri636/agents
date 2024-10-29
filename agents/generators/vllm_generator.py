@@ -26,7 +26,7 @@ class VLLMGeneratorConfig(BaseConfig):
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str = ModelType.MISTRAL7B.value
+    llm_name: str = ModelType.GEMMATWO27B.value
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
@@ -40,7 +40,7 @@ class VLLMGeneratorConfig(BaseConfig):
     # Whether to use beam search
     use_beam_search: bool = False
     # The number of GPUs to use
-    tensor_parallel_size: int = 1
+    tensor_parallel_size: int = 4
 
 class VLLMGenerator(BaseLLMGenerator):
     """Language model generator using vllm backend."""

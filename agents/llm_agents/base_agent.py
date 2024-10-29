@@ -8,7 +8,7 @@ from functools import singledispatch
 
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
-from agents.prompts.base_prompt import BasePromptTemplate
+from agents.prompts.base_prompt_template import BasePromptTemplate
 
 T = TypeVar('T')
 
@@ -31,14 +31,10 @@ class BaseGenerativeAgent(Protocol):
                  generator: BaseLLMGenerator,
                  prompt_template: BasePromptTemplate,
                  parser: Optional[Union[Type, Callable]], 
-                 output_fn: Optional[Union[Type, Callable]],
                  **kwargs
                  ) -> None:
         """Initialize the generator with the configuration."""
         
-    def preprocess(self, **kwargs) -> str: 
-        """Preprocesses raw input with prompt_template and returns a string"""
-        
-    def parse_outputs(self, **kwargs) -> list[Any]: 
-        """ Loops through raw outputs and parses it with the parser """
+    def batch_generate(self, **kwargs) -> list[str]: 
+        """ Some kind of generation function that returns a batch of responses. """
     

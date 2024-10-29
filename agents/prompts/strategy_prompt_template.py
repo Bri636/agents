@@ -9,36 +9,38 @@ from typing import Literal, Union, Optional, Any
 from pydantic import BaseModel, Field
 
 from agents.utils import BaseConfig
-from agents.prompts.base_prompt import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
+from agents.prompts.base_prompt_template import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
 from agents import prompt_registry
 
-PROMPT_NAME = 'Actor'
+PROMPT_NAME = 'Strategist'
 
-class ActorInputPayload(BaseOutputPayload): 
-    """ Outputs to present to the strategy """
-    strategy: str = "None"
-    task: str = "None"
-    context: str = "None"
+class StrategyInputPayload(BaseInputPayload): 
+    """ Outputs to present to the strategy 
     
-class ActorOutputPayload(BaseOutputPayload): 
+    :task - str: overall description of the task
+    :context - str: extra context for the llm
+    """
+    task: str = None
+    context: str = None
+    
+class StrategyOutputPayload(BaseOutputPayload): 
     """ Output format """
-    reasoning: str = "None"
-    action: str = "None"
+    strategy: str = None
     
 @prompt_registry.register(name=PROMPT_NAME, payloads={
-    'input': ActorInputPayload, 
-    'output': ActorOutputPayload
+    'input': StrategyInputPayload
 })
-class ActorPromptTemplate(BasePromptTemplate):
+class StrategyPromptTemplate(BasePromptTemplate):
     """Question answer prompt template."""
 
-    template_with_context: str = dedent('''
-System:
-=======
-{strategy}
+    template: str = dedent('''
+You are an intelligent strategist agent. You will be given an overall task or environment that you have to solve.
+Come up with a plausable strategy for how you might want to navigate or solve your environment and
+help you reach the goal. Your response must be some kind of strategy or thinking style, even if you have to guess. 
+Keep the strategy 
 
-Task:
-=====
+Environment or Task:
+=================== 
 {task}
 
 Context: 
@@ -50,19 +52,9 @@ Context:
         """Initialize the QuestionAnswerPromptTemplate."""
         self.config = config
 
-    def _format_prompt(
-        self,
-        environment_or_task:Optional[str | list[str]]
-        ) -> str:
-        """Format the prompt with the question and context."""
-        
-        return self.template_with_context.format(
-            environment_or_task=environment_or_task
-        )
-
     def preprocess(
         self,
-        environment_or_task:Optional[str | list[str]]
+        **kwargs
         ) -> list[str]:
         """Preprocess the text into prompts.
 
@@ -76,16 +68,9 @@ Context:
         list[str]
             The formatted prompts.
         """
-        # Ensure text is a list
-        if isinstance(environment_or_task, str):
-            environment_or_task = [environment_or_task]
-
-        # If no contexts are provided, use the no-context template
-        if environment_or_task is None:
-            return [self.template_no_context] * len(environment_or_task)
 
         # Build the prompts using the template
-        return list(map(self._format_prompt, environment_or_task))
+        return self.template.format(**kwargs)
 
     def postprocess(self, responses: list[str]) -> list[str]:
         """Postprocess the responses.

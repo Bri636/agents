@@ -17,10 +17,8 @@ def get_examples(split):
     print(f"{len(examples)} {split} examples")
     return examples
 
-
 ANS_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
 INVALID_ANS = "[invalid]"
-
 
 def gsm_extract_answer(completion):
     match = ANS_RE.search(completion)
