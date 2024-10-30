@@ -208,10 +208,11 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             best_child = self._uct_select(node)
             node = best_child # set node as best child
     
-    def expand(self, node: MCTSNode, environment: GymGame | gym.Env, num_children: int) -> MCTSNode: 
-        """ Expands last node of path into d children and returns the node """
+    def expand(self, node: MCTSNode, environment: GymGame | gym.Env, num_children: int) -> None: 
+        """ Expands last node of path into d children and updates the nodes internal children attribute """
         action_space = list(range(environment.action_cardinality))
         actions:list[int] = list(random.sample(action_space, num_children))
+        # TODO: make a reset-able environment for gym.Env classes
         envs:list[GymGame] = [environment.get_copy() for _ in actions]
         
         children = []
@@ -224,18 +225,17 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                              is_terminal=terminated, 
                              calc_q=self.calc_q)
             children.append(child)
-            
-        node.children = children
+           
+        node.children = children # update leaf/terminal node with children 
         
-        return node
     
     def _single_rollout(self, 
                         node: MCTSNode, 
                         environment: gym.Env | GymGame, 
                         strategy: Literal['random', 'policy']='random', 
                         max_tries: int = 10
-                        ) -> MCTSNode: 
-        """ Runs a full rollout on a single child node and returns the node with reward attr set to the cumulative rewards from rollout """
+                        ) -> float | int: 
+        """ Runs a full rollout on a single child node and returns the summed cumulative rewards from rollout """
         def episode_stop_condition(step: int, terminated: bool) -> bool: 
             """ True if max_tries exceeded or terminal"""
             return bool(step > max_tries or terminated)
@@ -256,10 +256,8 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             next_obs, reward, terminated, *_ = environment.step(action)
             rewards.append(reward)
             obs = next_obs
-            
-        node.reward = sum(rewards) # make node.reward = sum of rewards collected during the rollout
-        
-        return node
+        # node.reward = sum(rewards) # make node.reward = sum of rewards collected during the rollout
+        return sum(rewards)
         
     def simulate(self, 
                  node: MCTSNode, 
@@ -280,8 +278,8 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         'strategy': strategy, 
         'max_tries': max_tries
         }
-        simulated_node = self._single_rollout(**rollout_args)
-
+        rollout_reward = self._single_rollout(**rollout_args)
+        
         return simulated_node
     
     def back_propagate(self, path: list[MCTSNode], child_idx: int) -> float:
