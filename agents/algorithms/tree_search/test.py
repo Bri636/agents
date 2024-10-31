@@ -249,6 +249,9 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             """ True if max_tries exceeded or terminal"""
             return bool(step > max_tries or terminated)
         
+        # set environment to certain state; execute all actions up to the current node in the env 
+        _, _ = environment.reset()
+        
         if isinstance(environment, GymGame): 
             action_space = list(range(environment.action_cardinality))
         else: 
@@ -359,6 +362,67 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         
         return path
     
+    def search(self):
+        """ Search for the """
+        # stores the 
+        self._output_cum_reward = -math.inf
+        self._output_iter = None
+        # make root 
+        self.root = MCTSNode(state=self.world_model.init_state(), action=None, parent=None, calc_q=self.calc_q)
+        # stores the paths in each mcts iteration 
+        if self.output_trace_in_each_iter: 
+            self.trace_in_each_iter = []
+
+        # run mcts for n times and store each explored path 
+        for _ in trange(self.n_iters, disable=self.disable_tqdm, desc='MCTS iteration', leave=False):
+            path = self.iterate(self.root)
+            if self.output_trace_in_each_iter:
+                self.trace_in_each_iter.append(deepcopy(path))
+
+        # two different output strategies after running MCTS - this is inference
+        # Strategy 1: get path that maximizes reward - greedy 
+        if self.output_strategy == 'follow_max':
+            self._output_iter = [] # stores nodes in path 
+            cur = self.root # make node 
+            while True:
+                self._output_iter.append(cur) # add to path iteratively 
+                if cur.is_terminal: # return path if terminal node 
+                    break
+                # get the children from node if child.state is not None
+                visited_children = [x for x in cur.children if x.state is not None]
+                # if node has no children, then return path self._output_iter
+                if len(visited_children) == 0:
+                    break
+                # else, get the max child based on its reward 
+                cur = max(visited_children, key=lambda x: x.reward)
+            # set the output_cum_reward as the sum of the node rewards in the output iter trace
+            # NOTE: OG had self._output_iter[1::-1] but this takes idx [1, 0]
+            self._output_cum_reward = self.cum_reward([node.reward for node in self._output_iter[::-1]])
+            
+        # Strategy 2: get the absolute max reward of the inference path 
+        if self.output_strategy == 'max_reward':
+            # use dfs to get the inference path and cum_reward
+            self._output_cum_reward, self._output_iter = self._dfs_max_reward([self.root])
+            if self._output_cum_reward == -math.inf:
+                self._output_iter = None
+        
+    def _dfs_max_reward(self, path: list[MCTSNode]) -> tuple[float, list[MCTSNode]]:
+        """ 
+        Accumulates the rewards for the whole path depth first, 
+        then compared which path is the best and returns that 
+        
+        NOTE: not the same as the greedy one - greedy one just selects best child, this one selectes best cum_reward for each path
+        """
+        cur = path[-1] # get leaf of the path 
+        if cur.is_terminal: # if leaf terminal, sum the rewards for everything after root
+            return self.cum_reward([node.reward for node in path[1:]]), path
+        if cur.children is None:
+            return -math.inf, path
+        visited_children = [x for x in cur.children if x.state is not None]
+        if len(visited_children) == 0:
+            return -math.inf, path
+        return max((self._dfs_max_reward(path + [child]) for child in visited_children), key=lambda x: x[0])
+    
     def display_path(self, path: list[MCTSNode]) -> None:
         console = Console()
         tree = Tree(f"[bold green]MCTS Path - Depth: {len(path)}[/]")
@@ -369,6 +433,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             """
             tree.add(node_info)
         console.print(tree)
+        
 
 if __name__=="__main__": 
     
