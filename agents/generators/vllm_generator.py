@@ -11,15 +11,16 @@ from agents.generators.base_generator import BaseLLMGenerator
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
     
-    FALCON7B = 'tiiuae/falcon-7b'
-    FALCON40B = 'tiiuae/falcon-40b'
-    GEMMATWO9B = 'google/gemma-2-9b'
-    GEMMATWO27B = 'google/gemma-2-27b'
+    # FALCON7B = 'tiiuae/falcon-7b'
+    # FALCON40B = 'tiiuae/falcon-40b'
+    # GEMMATWO9B = 'google/gemma-2-9b'
+    # GEMMATWO27B = 'google/gemma-2-27b'
     LLAMA3INSTRUCT70B = 'meta-llama/Meta-Llama-3-70B-Instruct'
     LLAMA3170B = 'meta-llama/Meta-Llama-3.1-70B'
+    LLAMA38B = ''
     MISTRAL7B = 'mistralai/Mistral-7B-Instruct-v0.1'
     MIXTRAL7X8B = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
-    PHI3MEDIUMINSTRUCT = 'microsoft/Phi-3-medium-128k-instruct'
+    # PHI3MEDIUMINSTRUCT = 'microsoft/Phi-3-medium-128k-instruct'
 
 class VLLMGeneratorConfig(BaseConfig):
     """Configuration for the VLLMGenerator."""
@@ -96,13 +97,17 @@ class VLLMGenerator(BaseLLMGenerator):
         # Ensure that the prompts are in a list
         if isinstance(prompts, str):
             prompts = [prompts]
-
-        # Generate responses from the prompts. The output is a list of
-        # RequestOutput objects that contain the prompt, generated text,
-        # and other information.
-        outputs = self.llm.generate(prompts, self.sampling_params)
-
-        # Extract the response from the outputs
+            
+        outputs = self.llm.chat()
+        
         responses = [output.outputs[0].text for output in outputs]
 
-        return responses
+        # # Generate responses from the prompts. The output is a list of
+        # # RequestOutput objects that contain the prompt, generated text,
+        # # and other information.
+        # outputs = self.llm.generate(prompts, self.sampling_params)
+
+        # # Extract the response from the outputs
+        # responses = [output.outputs[0].text for output in outputs]
+
+        # return responses

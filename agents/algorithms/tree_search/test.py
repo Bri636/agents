@@ -437,20 +437,54 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
 
 if __name__=="__main__": 
     
-    gym.register_envs(ale_py)
-    env = gym.make("ALE/AirRaid-v5")
-    env = DiscreteGymGame(env)
-    A = env.action_cardinality
-    obs, info = env.reset()
-    
-    root = MCTSNode(state=obs, action=None)
-    mcts = MCTS()
-    
-    for _ in range(2): 
-        path = mcts.iterate(root, env)
-    
-    mcts.display_path(path)
+    from vllm import LLM, SamplingParams
+
+    llm = LLM(model="meta-llama/Meta-Llama-3-8B-Instruct")
+    sampling_params = SamplingParams(temperature=0.5, max_tokens=5000)
+
+
+    def print_outputs(outputs):
+        for output in outputs:
+            prompt = output.prompt
+            generated_text = output.outputs[0].text
+            print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
+        print("-" * 80)
+
+    print("=" * 80)
+    # In this script, we demonstrate how to pass input to the chat method:
+    conversations = [
+        [
+            {"role": "system", "content": "You are a helpful assistant"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hello! How can I assist you today?"},
+            {"role": "user", "content": "Write an essay about the importance of higher education."},
+        ],
+        [
+            {"role": "system", "content": "You are a supportive life coach"},
+            {"role": "user", "content": "How can I improve my productivity?"},
+        ]
+    ]
+    outputs = llm.chat(conversations,
+                    sampling_params=sampling_params,
+                    use_tqdm=False)
     breakpoint()
+    # print_outputs(outputs)
+    test = outputs[0].outputs[0].text
+    breakpoint()
+    # gym.register_envs(ale_py)
+    # env = gym.make("ALE/AirRaid-v5")
+    # env = DiscreteGymGame(env)
+    # A = env.action_cardinality
+    # obs, info = env.reset()
+    
+    # root = MCTSNode(state=obs, action=None)
+    # mcts = MCTS()
+    
+    # for _ in range(2): 
+    #     path = mcts.iterate(root, env)
+    
+    # mcts.display_path(path)
+    # breakpoint()
 
     # opt_path: list[MCTSNode] = mcts.select(root)
     # opt_path[-1] = mcts.expand(opt_path[-1], env, A) # expand the leaf node 

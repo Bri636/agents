@@ -13,7 +13,7 @@ from rich import print
 
 load_dotenv()
 
-gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
+# gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
 
 # need below for estimation_distribution_mutation, not currently using.
 # model = SentenceTransformer('multi-qa-distilbert-cos-v1')
@@ -199,3 +199,12 @@ def mutate(population: Population, model: Client) -> Population:
         random_mutator(**data)
 
     return population
+
+if __name__=="__main__": 
+    from agents.prompts.prompt_breeder.gsm import read_jsonl, batch_sample_qa_pairs, batch_eval_gsm, batch_gsm_extract_answer
+    
+    problem_description = "Solve the math word problem, giving your answer as an arabic numeral."
+    
+    out = zero_order_prompt_gen(..., problem_description, ...)
+    
+    breakpoint()
