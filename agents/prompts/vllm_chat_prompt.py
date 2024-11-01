@@ -76,6 +76,4 @@ class StrategyPromptTemplate(BasePromptTemplate):
     
 if __name__ == "__main__": 
     
-    
-    
     breakpoint()

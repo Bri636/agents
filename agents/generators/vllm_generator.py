@@ -80,13 +80,18 @@ class VLLMGenerator(BaseLLMGenerator):
             tensor_parallel_size=config.tensor_parallel_size,
         )
 
-    def generate(self, prompts: str | list[str]) -> list[str]:
+    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
         """Generate response text from prompts.
 
         Parameters
         ----------
-        prompts : str | list[str]
-            The prompts to generate text from.
+        prompts : dict[str, str] | list[dict[str, str]]
+            The prompts to generate text from, of form: 
+            [
+                {'user': ..., 
+                'content': ...}, 
+                ...  
+            ]
 
         Returns
         -------
@@ -95,14 +100,16 @@ class VLLMGenerator(BaseLLMGenerator):
             (one response per prompt).
         """
         # Ensure that the prompts are in a list
-        if isinstance(prompts, str):
+        if isinstance(prompts, dict):
             prompts = [prompts]
             
-        outputs = self.llm.chat(messages=..., 
+        outputs = self.llm.chat(messages=prompts, 
                                 sampling_params=self.sampling_params, 
                                 use_tqdm=True)
         
         responses = [output.outputs[0].text for output in outputs]
+        
+        return responses
 
         # # Generate responses from the prompts. The output is a list of
         # # RequestOutput objects that contain the prompt, generated text,

@@ -3,25 +3,30 @@ import re
 import os
 import random
 
-def read_jsonl(path: str) -> list[dict[str, str]]:
-    """
-    Format: 
-    [{'question': // text question //, 
-      'answer': // Step-by-step answer, with "\ n" representing steps of thought, and ####space ... as the answer: 
-    }]
-    
-    ex. 
-    [{'question': 
+"""
+Format: 
+[{'question': // text question //, 
+    'answer': // Step-by-step answer, with "\ n" representing steps of thought, and ####space ... as the answer: 
+}]
+
+ex. 
+[{'question': 
 A cleaning company produces two sanitizer sprays. 
 One spray kills 50% of germs, and another spray kills 25% of germs. 
 However, 5% of the germs they kill are the same ones. 
 What percentage of germs would be left after using both sanitizer sprays together?
-      'answer': 
+    'answer': 
 After the first spray kills 50% of germs, there will be 100 - 50 = <<100-50=50>>50% left.
 The second spray kills 25%, but 5% have already been killed by the 50% spray, so it kills 25 - 5 = <<25-5=20>>20%.
 After the second spray kills 20% of the remaining germs, there will be 50 - 20 = <<50-20=30>>30% left.
 #### 30
-    }]
+}]
+
+"""
+
+def read_jsonl(path: str) -> list[dict[str, str]]:
+    """
+    Reads jsonl and returns it 
     """
     with open(path) as fh:
         return [json.loads(line) for line in fh.readlines() if line]

@@ -25,7 +25,6 @@ class GSM8kPromptDict(TypedDict):
     overall_question_prefix: str
     answer_prefix: str
 
-
 class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction, GSM8kExample]):
     """
     GSM8k World Model
