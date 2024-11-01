@@ -98,7 +98,9 @@ class VLLMGenerator(BaseLLMGenerator):
         if isinstance(prompts, str):
             prompts = [prompts]
             
-        outputs = self.llm.chat()
+        outputs = self.llm.chat(messages=..., 
+                                sampling_params=self.sampling_params, 
+                                use_tqdm=True)
         
         responses = [output.outputs[0].text for output in outputs]
 

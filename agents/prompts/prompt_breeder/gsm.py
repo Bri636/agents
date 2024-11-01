@@ -84,7 +84,7 @@ if __name__=="__main__":
     import pprint as pp
     from vllm import LLM, SamplingParams
     
-    batch_size = 4
+    batch_size = 1
     dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
     samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size)
     model_responses = [" The answer is #### 11 "] * batch_size
@@ -92,6 +92,7 @@ if __name__=="__main__":
     evals = batch_eval_gsm(completions, samples)
     
     class GSM8kPromptDict(TypedDict):
+        """ Stores the Components for the Prompt """
         instruction: str
         interactive_examples: list[str]
         useful_examples: list[str]
@@ -102,35 +103,34 @@ if __name__=="__main__":
         
     Example = TypeVar('Example')
     
-    def update_example_llama(prompt, num_fsl_examples: int):
+    def update_example_llama(prompt: GSM8kPromptDict, num_fsl_examples: int) -> list[dict[str, str]]:
+        """ 
+        Takes in a GSM8kPromptDict with a loaded instruction and fsl examples 
+        and returns a list of {'user': ..., 'content': ...} messages for llama 
+        """
         system_instruction = prompt['instruction']
-        
         formatted_examples = []
         
         for idx, example_text in enumerate(prompt['interactive_examples']):
             formatted_example = [{"role": "system", "content": system_instruction}]
-            
             # Extract the user question and answer pairs
             lines = example_text.strip().splitlines()
-            
             # Add the main question to the formatted example
             main_question = next(line for line in lines if line.startswith("Question"))
             formatted_example.append({"role": "user", "content": main_question.strip().format(idx=idx + 1)})
-            
             # Process sub-questions and answers
             for line in lines[1:]:
                 if line.startswith("Question"):
                     formatted_example.append({"role": "user", "content": line.strip().format(idx=idx + 1)})
                 elif line.startswith("Answer"):
                     formatted_example.append({"role": "assistant", "content": line.strip().format(idx=idx + 1)})
-            
             formatted_examples.append(formatted_example)
 
         # Sample the specified number of formatted examples
         indices = random.sample(range(len(formatted_examples)), num_fsl_examples)
         selected_examples = [formatted_examples[i] for i in indices]
 
-        return system_instruction, selected_examples
+        return selected_examples
 
     
     def update_example(prompt: GSM8kPromptDict, num_fsl_examples: int) -> Tuple[str, list[str]]:
@@ -178,10 +178,10 @@ if __name__=="__main__":
 }
     
     # instruction, fsl_prompts = update_example(prompt, 3)
-    instruction, fsl_prompts = update_example_llama(prompt, 3)
+    fsl_prompts = update_example_llama(prompt, 3)
     
     conversations:list[list[dict]] = fsl_prompts
-    conversations[0].append({'role': 'user', 'content': 'Question 2: What is the gcd(56, 15)?'})
+    conversations[0].append({'role': 'user', 'content': f'Question 2: {samples[0]["question"]}'})
     # conversations[0].append({'role': 'assistant', 'content': 'Question 2.1: What is the prime factorization of 56?'})
     # conversations[0].append({'role': 'user', 'content': 'Answer 2.1: The prime factorization of 56 is 2 * 2 * 2 * 7 = 2^3 * 7 The answer is 2^3 * 7.'})
     test_input = conversations[0]
@@ -223,6 +223,7 @@ if __name__=="__main__":
         else: 
             other.append(output)
             
+    breakpoint()
     if final: 
         
         breakpoint()
