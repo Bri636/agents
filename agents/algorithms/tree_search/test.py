@@ -442,7 +442,6 @@ if __name__=="__main__":
     llm = LLM(model="meta-llama/Meta-Llama-3-8B-Instruct")
     sampling_params = SamplingParams(temperature=0.5, max_tokens=5000)
 
-
     def print_outputs(outputs):
         for output in outputs:
             prompt = output.prompt

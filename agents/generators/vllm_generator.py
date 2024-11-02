@@ -17,7 +17,7 @@ class ModelType(Enum):
     # GEMMATWO27B = 'google/gemma-2-27b'
     LLAMA3INSTRUCT70B = 'meta-llama/Meta-Llama-3-70B-Instruct'
     LLAMA3170B = 'meta-llama/Meta-Llama-3.1-70B'
-    LLAMA38B = ''
+    LLAMA38B = 'meta-llama/Meta-Llama-3-8B-Instruct'
     MISTRAL7B = 'mistralai/Mistral-7B-Instruct-v0.1'
     MIXTRAL7X8B = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
     # PHI3MEDIUMINSTRUCT = 'microsoft/Phi-3-medium-128k-instruct'
@@ -27,7 +27,7 @@ class VLLMGeneratorConfig(BaseConfig):
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str = ModelType.GEMMATWO27B.value
+    llm_name: str = ModelType.LLAMA38B.value
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
@@ -41,7 +41,7 @@ class VLLMGeneratorConfig(BaseConfig):
     # Whether to use beam search
     use_beam_search: bool = False
     # The number of GPUs to use
-    tensor_parallel_size: int = 4
+    tensor_parallel_size: int = 1
 
 class VLLMGenerator(BaseLLMGenerator):
     """Language model generator using vllm backend."""
@@ -102,13 +102,12 @@ class VLLMGenerator(BaseLLMGenerator):
         # Ensure that the prompts are in a list
         if isinstance(prompts, dict):
             prompts = [prompts]
-            
+
         outputs = self.llm.chat(messages=prompts, 
                                 sampling_params=self.sampling_params, 
                                 use_tqdm=True)
-        
         responses = [output.outputs[0].text for output in outputs]
-        
+
         return responses
 
         # # Generate responses from the prompts. The output is a list of
