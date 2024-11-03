@@ -13,8 +13,8 @@ from agents.llm_agents.strategist import LactChainStrategyChain
 from agents.llm_agents.actor import LactChainActorChain
 
 from agents.prompts import get_instruction
-from agents.prompts.strategy_prompt_template import StrategyInputPayload
-from agents.prompts.action_prompt_template import ActorInputPayload
+from agents.extra.prompts.strategy_prompt_template import StrategyInputPayload
+from agents.extra.prompts.action_prompt_template import ActorInputPayload
 from agents.parsers import LLMOutputParser, get_parser
 from agents.generators import get_generator, BaseLLMGenerator
 

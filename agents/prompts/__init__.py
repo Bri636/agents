@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 from agents import prompt_registry
 from agents.registry import import_submodules
-from agents.prompts.action_prompt_template import Instructions
+from agents.extra.prompts.action_prompt_template import Instructions
 
 import_submodules(__name__) # trigger import of submodules of this module so we auto-register classes
 

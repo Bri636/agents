@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Literal
 from enum import Enum
-
+from vllm.sequence import Logprob
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
+
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
-    
+
     # FALCON7B = 'tiiuae/falcon-7b'
     # FALCON40B = 'tiiuae/falcon-40b'
     # GEMMATWO9B = 'google/gemma-2-9b'
@@ -21,6 +22,7 @@ class ModelType(Enum):
     MISTRAL7B = 'mistralai/Mistral-7B-Instruct-v0.1'
     MIXTRAL7X8B = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
     # PHI3MEDIUMINSTRUCT = 'microsoft/Phi-3-medium-128k-instruct'
+
 
 class VLLMGeneratorConfig(BaseConfig):
     """Configuration for the VLLMGenerator."""
@@ -42,6 +44,9 @@ class VLLMGeneratorConfig(BaseConfig):
     use_beam_search: bool = False
     # The number of GPUs to use
     tensor_parallel_size: int = 1
+    # number of log probs to return per output token
+    logprobs: int = 1
+
 
 class VLLMGenerator(BaseLLMGenerator):
     """Language model generator using vllm backend."""
@@ -68,10 +73,10 @@ class VLLMGenerator(BaseLLMGenerator):
         self.sampling_params = SamplingParams(
             temperature=config.temperature,
             max_tokens=config.max_tokens,
+            logprobs=config.logprobs,
             # use_beam_search=config.use_beam_search,
             **sampling_kwargs,
         )
-
         # Create an LLM instance
         self.llm = LLM(
             model=config.llm_name,
@@ -80,7 +85,9 @@ class VLLMGenerator(BaseLLMGenerator):
             tensor_parallel_size=config.tensor_parallel_size,
         )
 
-    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
+    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
+                                                                                list[str],
+                                                                                list[float]]:
         """Generate response text from prompts.
 
         Parameters
@@ -103,19 +110,33 @@ class VLLMGenerator(BaseLLMGenerator):
         if isinstance(prompts, dict):
             prompts = [prompts]
 
-        outputs = self.llm.chat(messages=prompts, 
-                                sampling_params=self.sampling_params, 
+        outputs = self.llm.chat(messages=prompts,
+                                sampling_params=self.sampling_params,
                                 use_tqdm=True)
-        responses = [output.outputs[0].text for output in outputs]
+        responses: list[str] = [output.outputs[0].text
+                                for output in outputs]
+        log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs
+                                               for output in outputs]
 
-        return responses
+        token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
 
-        # # Generate responses from the prompts. The output is a list of
-        # # RequestOutput objects that contain the prompt, generated text,
-        # # and other information.
-        # outputs = self.llm.generate(prompts, self.sampling_params)
+        return {'text': responses,
+                'token_seq': token_seq,
+                'log_probs': log_prob_seq,
+                }
 
-        # # Extract the response from the outputs
-        # responses = [output.outputs[0].text for output in outputs]
+    def extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> dict[list[str], list[float]]:
+        """ processes through the log_probs objects to return a sequence of the log probs and the sequence of text """
 
-        # return responses
+        token_seq = []
+        log_prob_seq = []
+        for log_prob_dict in log_probs:
+            log_prob_obj: Logprob = log_prob_dict.values()
+            log_prob, token = log_prob_obj.logprob, log_prob_obj.decoded_token
+            token_seq.append(token)
+            log_prob_seq.append(log_prob)
+
+        return {
+            'tokens': token_seq,
+            'log_probs': log_prob_seq
+        }

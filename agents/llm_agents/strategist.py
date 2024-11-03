@@ -21,7 +21,7 @@ from agents.generators.base_generator import BaseLLMGenerator
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.parsers import LLMOutputParser
 
-from agents.prompts.strategy_prompt_template import (StrategyInputPayload,
+from agents.extra.prompts.strategy_prompt_template import (StrategyInputPayload,
                                             StrategyOutputPayload,
                                             StrategyPromptTemplate)
 from agents.llm_agents.agent_utils import LactChainAgentMessage

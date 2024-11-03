@@ -127,49 +127,14 @@ class GSMLlamaPromptTemplate:
     def __str__(self) -> str:
         return pp.pformat(self.fsl_prompt)
     
-
-def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_answer', '[invalid]']: 
-    """ Filter an llm output and returns what kind of response it is """
-    Q = re.compile(r"Question (\-?[0-9\.\,]+)")
-    A = re.compile(r"Answer (\-?[0-9\.\,]+)")
-    FA = re.compile(r"####")
-    
-    if Q.search(llm_output): 
-        return 'question'
-    elif A.search(llm_output): 
-        return 'answer'
-    elif FA.search(llm_output): 
-        return 'final_answer'
-    else: 
-        return '[invalid]'
-    
-def gsm_extract_answer(completion: str) -> str:
-    """ 
-    Parses through a string and returns the answer as a str
-    
-    Expects the answer in this format: 
-    Answer is #### -567.89 ===> -567.89
-    """
-    ANS_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
-    INVALID_ANS = "[invalid]"
-    
-    match = ANS_RE.search(completion)
-    if match:
-        match_str = match.group(1).strip()
-        match_str = match_str.replace(",", "")
-        return match_str
-    else:
-        return INVALID_ANS
-    
-def gsm_is_correct(answer: str, gold_answer: dict[str, str]) -> bool: 
-    return bool(
-        float(gsm_extract_answer(answer)) == float(gsm_extract_answer(gold_answer["answer"]))
-        )
-    
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.prompt_breeder.gsm import batch_sample_qa_pairs
+    from agents.prompt_breeder.gsm import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    
+    def log_prob_reward(log_probs_seq: list[float]) -> float: 
+        """ Returns the average log probability"""
+        return float(sum(log_probs_seq) / len(log_probs_seq))
     
     q_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('question', 1, 'question')
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')
@@ -187,17 +152,18 @@ if __name__ == "__main__":
     breakpoint()
     
     for _ in range(10): 
-        sub_q = generator.generate(q_prompt.preprocess())[0]
-        q_prompt.add(**{'role': 'assistant', 'content': sub_q})
-        a_prompt.add(**{'role': 'user', 'content': sub_q})
-        sub_a = generator.generate(a_prompt.preprocess())[0]
-        q_prompt.add('user', sub_a)
-        a_prompt.add('assistant', sub_a)
+        sub_q_dict = generator.generate(q_prompt.preprocess())
+        q_prompt.add(**{'role': 'assistant', 'content': sub_q_dict['text'][0]})
+        a_prompt.add(**{'role': 'user', 'content': sub_q_dict['text'][0]})
         
-        if filter_output_type(sub_a) == 'final_answer': 
+        sub_a_dict = generator.generate(a_prompt.preprocess())
+        q_prompt.add('user', sub_a_dict['text'][0])
+        a_prompt.add('assistant', sub_a_dict['text'][0])
+        
+        if filter_output_type(sub_a_dict['text'][0]) == 'final_answer': 
             break
         
-    out = gsm_is_correct(sub_a, samples[0])
+    out = gsm_is_correct(sub_a_dict['text'][0], samples[0])
     breakpoint()
 
     
