@@ -62,15 +62,19 @@ def gsm_extract_answer(completion: str) -> str:
     else:
         return INVALID_ANS
     
-# def gsm_is_correct(model_completion: str, gt_example: dict[str, str]) -> bool:
-#     gt_answer = gsm_extract_answer(gt_example["answer"])
-#     assert gt_answer != INVALID_ANS
-#     return gsm_extract_answer(model_completion) == gt_answer
+def gsm_is_correct(model_completion: str, gt_example: dict[str, str]) -> bool:
+    gt_answer = gsm_extract_answer(gt_example["answer"])
+    assert gt_answer != INVALID_ANS
+    return gsm_extract_answer(model_completion) == gt_answer
 
-def gsm_is_correct(answer: str, gold_answer: dict[str, str]) -> bool:
+def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str], verbose: bool = True) -> bool:
     """ Checks if final model's output matches the gold answer """ 
-    return bool(float(gsm_extract_answer(answer)) == 
-                float(gsm_extract_answer(gold_answer["answer"])))
+    
+    answer = float(gsm_extract_answer(answer))
+    gold_answer = float(gsm_extract_answer(gold_answer["answer"]))
+    if verbose: 
+        print(f'Question {idx +1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n\n')
+    return bool(answer == gold_answer)
 
 # mine 
 def batch_sample_qa_pairs(dataset: list[dict[str, str]], batch_size: int) -> list[dict[str, str]]: 
@@ -94,13 +98,18 @@ def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_
     """ Filter an llm output and returns what kind of response it is """
     Q = re.compile(r"Question (\-?[0-9\.\,]+)")
     A = re.compile(r"Answer (\-?[0-9\.\,]+)")
-    FA = re.compile(r"####")
+    FA = re.compile(r"####\s*(-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)")
     
-    if Q.search(llm_output): 
+    Q_searched = Q.search(llm_output)
+    A_searched = A.search(llm_output)
+    FA_searched = FA.search(llm_output)
+
+    if Q_searched: 
         return 'question'
-    elif A.search(llm_output): 
-        return 'answer'
-    elif FA.search(llm_output): 
+    elif FA_searched: # place FA searched in earlier order
         return 'final_answer'
+    elif A_searched: 
+        return 'answer'
     else: 
         return '[invalid]'
+    

@@ -3,11 +3,12 @@
 from __future__ import annotations
 from typing import Callable, Tuple, Any
 import random
+from tqdm import tqdm 
 
-from agents.prompt_breeder.gsm import read_jsonl
+from agents.gsm8k.utils import read_jsonl
 from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-from agents.prompt_breeder.gsm import filter_output_type, gsm_is_correct
+from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
 class GSMEvaluator: 
 
@@ -25,7 +26,7 @@ class GSMEvaluator:
         self.answer_prompt = answer_prompt
         self.parser = parser
     
-    def single_pass(self, sample: dict[str, str], num_tries: int) -> Tuple[bool, bool | None]: 
+    def single_pass(self, idx: int, sample: dict[str, str], num_tries: int) -> Tuple[bool, bool | None]: 
         """ 
         Performs eval on one question from GSM8K and returns if successfully parsed, 
         and if llm was correct or not
@@ -34,20 +35,24 @@ class GSMEvaluator:
         self.question_prompt.add('user', content=question)
         self.answer_prompt.add('user', content=question)
         
-        for _ in range(num_tries): 
-            sub_q = self.generator.generate(self.question_prompt.preprocess())[0]
-            self.question_prompt.add(**{'role': 'assistant', 'content': sub_q})
-            self.answer_prompt.add(**{'role': 'user', 'content': sub_q})
+        try: 
+            for _ in range(num_tries): 
+                sub_q = self.generator.generate(self.question_prompt.preprocess())[0]
+                self.question_prompt.add(**{'role': 'assistant', 'content': sub_q})
+                self.answer_prompt.add(**{'role': 'user', 'content': sub_q})
+                
+                sub_a = self.generator.generate(self.answer_prompt.preprocess())[0]
+                self.question_prompt.add('user', sub_a)
+                self.answer_prompt.add('assistant', sub_a)
             
-            sub_a = self.generator.generate(self.answer_prompt.preprocess())[0]
-            self.question_prompt.add('user', sub_a)
-            self.answer_prompt.add('assistant', sub_a)
-        
-            if filter_output_type(sub_a) == 'final_answer': 
-                out = gsm_is_correct(sub_a, sample)
-                return True, out
-            
-        return False, None
+                if filter_output_type(sub_a) == 'final_answer': 
+                    out = gsm_is_correct(idx, sub_a, sample)
+                    return True, out 
+                
+            return True, False # if run out of times, assume false
+                
+        except Exception as e: 
+            return False, None
     
     def reset_pass(self) -> None: 
         """ Resets the prompts """
@@ -61,13 +66,14 @@ class GSMEvaluator:
         
         num_correct = 0
         num_completed = 0
-        for _, sample in enumerate(samples): 
+        for idx, sample in tqdm(enumerate(samples)): 
             
-            finished, correct = self.single_pass(sample, num_tries)
+            finished, correct = self.single_pass(idx, sample, num_tries)
             num_correct += finished and correct
             num_completed += finished
             self.reset_pass()
-            
+
+            print(f'Correct: {num_correct}')
         percent_completed = (num_completed / num_samples) * 100
         percent_correct = (num_correct / num_completed) * 100
         
@@ -78,7 +84,7 @@ class GSMEvaluator:
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.prompt_breeder.gsm import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
     
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
         """ Returns the average log probability"""
@@ -90,27 +96,39 @@ if __name__ == "__main__":
     generator = VLLMGenerator(generator_cfg)
     
     dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size = 1)
-    problem = samples[0]['question']
-    answer = samples[0]['answer']
     
-    q_prompt.add('user', content=problem)
-    a_prompt.add('user', content=problem)
+    evaluator = GSMEvaluator(dataset, generator, q_prompt, a_prompt, None)
     
-    breakpoint()
+    # breakpoint()
     
-    for _ in range(10): 
-        sub_q_dict = generator.generate(q_prompt.preprocess())
-        q_prompt.add(**{'role': 'assistant', 'content': sub_q_dict['text'][0]})
-        a_prompt.add(**{'role': 'user', 'content': sub_q_dict['text'][0]})
+    metrics = evaluator.evaluate(20, 10)
+    
+    # breakpoint()
+    
+    import pprint as pp
+    pp.pprint(metrics)
+    
+    # samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size = 1)
+    # problem = samples[0]['question']
+    # answer = samples[0]['answer']
+    
+    # q_prompt.add('user', content=problem)
+    # a_prompt.add('user', content=problem)
+    
+    # breakpoint()
+    
+    # for _ in range(10): 
+    #     sub_q_dict = generator.generate(q_prompt.preprocess())
+    #     q_prompt.add(**{'role': 'assistant', 'content': sub_q_dict['text'][0]})
+    #     a_prompt.add(**{'role': 'user', 'content': sub_q_dict['text'][0]})
         
-        sub_a_dict = generator.generate(a_prompt.preprocess())
-        q_prompt.add('user', sub_a_dict['text'][0])
-        a_prompt.add('assistant', sub_a_dict['text'][0])
+    #     sub_a_dict = generator.generate(a_prompt.preprocess())
+    #     q_prompt.add('user', sub_a_dict['text'][0])
+    #     a_prompt.add('assistant', sub_a_dict['text'][0])
         
-        if filter_output_type(sub_a_dict['text'][0]) == 'final_answer': 
-            break
+    #     if filter_output_type(sub_a_dict['text'][0]) == 'final_answer': 
+    #         break
         
-    out = gsm_is_correct(sub_a_dict['text'][0], samples[0])
-    breakpoint()
+    # out = gsm_is_correct(sub_a_dict['text'][0], samples[0])
+    # breakpoint()
     

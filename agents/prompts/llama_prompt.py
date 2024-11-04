@@ -11,9 +11,10 @@ from textwrap import dedent
 import itertools
 import pprint as pp
 from enum import Enum
+import copy
 
 from agents.utils import BaseConfig
-from agents.prompts.base_prompt_template import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
+from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents import prompt_registry
 from agents.prompts.gsm_llama_prompts import BASE, QUESTION, ANSWER
 
@@ -74,8 +75,8 @@ def make_fsl_llama(prompt: GSM8kPromptDict, num_fsl_examples: int, agent_type: L
 
     return list(itertools.chain(*selected_examples))
     
-@prompt_registry.register(name=PROMPT_NAME)
-class GSMLlamaPromptTemplate:
+
+class GSMLlamaPromptTemplate(BasePromptTemplate):
     """ Question answer prompt template."""
 
     def __init__(self, fsl_prompt_type: str = 'question', num_fsl_examples: int = 1, agent_type: str = None) -> None:
@@ -93,8 +94,8 @@ class GSMLlamaPromptTemplate:
         
         fsl_prompt_base: list[dict[str, str]] = make_fsl_llama(fsl_prompt_base, num_fsl_examples, agent_type)
         
-        self._fsl_prompt_base = fsl_prompt_base
-        self.fsl_prompt = fsl_prompt_base
+        self._fsl_prompt_base = copy.deepcopy(fsl_prompt_base)
+        self.fsl_prompt = copy.deepcopy(fsl_prompt_base)
         
     def add(self, role: Literal['user', 'assistant', 'system'], content: str) -> None: 
         """ Add new content to the prompt """
@@ -106,7 +107,7 @@ class GSMLlamaPromptTemplate:
         
     def reset(self) -> None: 
         """ Resets the whole prompt to the base fsl prompt """
-        self.fsl_prompt = self._fsl_prompt_base
+        self.fsl_prompt = copy.deepcopy(self._fsl_prompt_base)
 
     def preprocess(self, **kwargs) -> list[dict[str, str]]:
         """
@@ -130,7 +131,7 @@ class GSMLlamaPromptTemplate:
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.prompt_breeder.gsm import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
     
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
         """ Returns the average log probability"""
@@ -138,6 +139,16 @@ if __name__ == "__main__":
     
     q_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('question', 1, 'question')
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')
+    
+    breakpoint()
+    
+    q_prompt.add(**{'role': 'user', 'content': "TESTING"})
+    
+    
+    breakpoint()
+    
+    
+    
     generator_cfg = VLLMGeneratorConfig()
     generator = VLLMGenerator(generator_cfg)
     

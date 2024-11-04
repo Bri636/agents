@@ -172,4 +172,15 @@ class ArgoGenerator(BaseLLMGenerator):
 
     def __repr__(self):
         return f"Langchain Generator with Chain: {self.llm}"
+    
+    
+if __name__ == "__main__": 
+    
+    cfg = ArgoGeneratorConfig(url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/', user='cels')
+    
+    generator = ArgoGenerator(cfg)
+    breakpoint()
+    result = generator.generate('hello how are you doing?')
+    
+    breakpoint()
         

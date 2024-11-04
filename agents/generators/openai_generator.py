@@ -1,81 +1,149 @@
-"""Module for the OpenAI completions backend LLMGenerator."""
-
-from __future__ import annotations
-
-from typing import Literal
+import os
+import requests
+import json
+from typing import Any, List, Literal, Mapping, Optional, Tuple, Dict, Union
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from langchain_core.language_models.llms import LLM
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+import requests
+import json
+import os
+from pydantic import Field, BaseModel
+from collections import defaultdict
 from enum import Enum
+from dataclasses import asdict
+
+from langchain_core.embeddings.embeddings import Embeddings
+from sqlalchemy import desc
+from langchain_core.prompts import PromptTemplate
 
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
-class OpenAIGeneratorConfig(BaseConfig):
-    """Configuration for the VLLMGenerator."""
-    _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
-    # The name of the vllm LLM model, see
-    # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str 
-    # Whether to trust remote code
-    trust_remote_code: bool = True
-    # Temperature for sampling
-    temperature: float = 0.5
-    # Min p for sampling
-    min_p: float = 0.1
-    # Top p for sampling (off by default)
-    top_p: float = 0.0
-    # Max tokens to generate
-    max_tokens: int = 2000
-    # Whether to use beam search
-    use_beam_search: bool = False
-    # The number of GPUs to use
-    tensor_parallel_size: int = 1
+class ModelType(Enum):
+    '''Suppored Models With Argo'''
+    GPT35 = 'gpt35'
+    GPT4 = 'gpt4'
+    GPT4O = 'gpt4o'
+    GPT4TURBO = 'gpt4turbo'
+    
+class ArgoGeneratorConfig(BaseConfig): 
+    '''Base Config for Argo Language Model'''
+    
+    _name: str = 'ArgoGenerator'
+    
+    model_type:Literal['gpt35', 'gpt4', 'gpt4o', 'gpt4turbo', 'o1preview']=Field(
+        default='gpt4turbo', 
+        description='What kind of language model to use from openai'
+    )
+    url:str=Field(
+        default="https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/", 
+        description='URL for pointing model at'
+    )
+    temperature:float=Field(
+        default=0.00001, 
+        description='What temperature of the model to be at for sampling'
+    )
+    system:Optional[str]=Field(
+        default=None, 
+        description='What system to use'
+    )
+    top_p:float=Field(
+        default=0.0000001, 
+        description='What top_p to use for sampling'
+    )
+    user:str=Field(
+        default='bhsu'
+    )
+    
+class ArgoLLM(LLM):
+    '''Overwritten langchain LLM model'''
+    model_type: ModelType = ModelType.GPT4
+    url: str = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+    temperature: Optional[float] = 0.0
+    system: Optional[str] = 'None'
+    top_p: Optional[float]= 0.0000001
+    user: str = 'bhsu'
+    
+    @property
+    def _llm_type(self) -> str:
+        return "ArgoLLM"
 
+    def _call(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> str:
 
-class OpenAIGenerator(BaseLLMGenerator):
-    """Language model generator using vllm backend."""
+        headers = {
+            "Content-Type": "application/json"
+        }
+        params = {
+            **self._get_model_default_parameters,
+            **kwargs,
+            "prompt": [prompt],
+            "stop": []
+        }
 
-    def __init__(self, config: OpenAIGeneratorConfig) -> None:
-        """Initialize the OpenAI generator
+        params_json = json.dumps(params);
+        response = requests.post(self.url, headers=headers, data=params_json)
 
-        Parameters
-        ----------
-        config : OpenAIGeneratorConfig
-            The configuration for the OpenAI generator.
-        """
-        from openai import OpenAI
-        
-        client = OpenAI()
-        
-        
-        
-        
-        
-        from vllm import LLM
-        from vllm import SamplingParams
-
-        # Create the sampling params to use
-        sampling_kwargs = {}
-        if config.top_p:
-            sampling_kwargs['top_p'] = config.top_p
+        if response.status_code == 200:
+            parsed = json.loads(response.text)
+            return parsed['response']
         else:
-            sampling_kwargs['min_p'] = config.min_p
+            raise Exception(f"Request failed with status code: {response.status_code} {response.text}")
 
-        # Create the sampling params to use
-        self.sampling_params = SamplingParams(
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            # use_beam_search=config.use_beam_search,
-            **sampling_kwargs,
-        )
+    @property
+    def _get_model_default_parameters(self):
+        return {
+            "user": self.user,
+            "model": self.model,
+            "system": "" if self.system is None else self.system,
+            "temperature": self.temperature,
+            "top_p":  self.top_p
+        }
 
-        # Create an LLM instance
-        self.llm = LLM(
-            model=config.llm_name,
-            trust_remote_code=config.trust_remote_code,
-            dtype='bfloat16',
-            tensor_parallel_size=config.tensor_parallel_size,
-        )
+    @property
+    def model(self):
+        return self.model_type
+    
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get the identifying parameters."""
+        return {}
 
-    def generate(self, prompts: str | list[str]) -> list[str]:
+    @property
+    def _generations(self):
+        return
+    
+class ArgoGenerator(BaseLLMGenerator): 
+    '''Argo generator for generating outputs'''
+    
+    def __init__(self, config:ArgoGeneratorConfig) -> None: 
+        from langchain.chains.llm import LLMChain
+        from langchain_core.prompts import ChatPromptTemplate
+        
+        llm = ArgoLLM()
+        
+        # set class attributes of model 
+        setattr(llm, 'model_type', config.model_type)
+        setattr(llm, 'temperature', config.temperature)
+        setattr(llm, 'system', config.system)
+        setattr(llm, 'top_p', config.top_p)
+        setattr(llm, 'user', config.user)
+        
+        prompt = ChatPromptTemplate.from_template('{input}')
+        
+        chain = LLMChain(llm=llm, prompt=prompt)
+        
+        self.llm = llm
+        self.chain = chain
+        
+    def generate(self, prompts: Union[str, list[str]]) -> list[str]: 
         """Generate response text from prompts.
 
         Parameters
@@ -89,16 +157,46 @@ class OpenAIGenerator(BaseLLMGenerator):
             A list of responses generated from the prompts
             (one response per prompt).
         """
-        # Ensure that the prompts are in a list
-        if isinstance(prompts, str):
+        
+        if isinstance(prompts, str): 
             prompts = [prompts]
+            
+        inputs = [{'input': prompt} for prompt in prompts]
+        raw_outputs = self.chain.batch(inputs)
+        outputs = [output['text'] for output in raw_outputs]
+        
+        return outputs
+        
+    def __str__(self):
+        return f"Langchain Generator with Chain: {self.llm}"
 
-        # Generate responses from the prompts. The output is a list of
-        # RequestOutput objects that contain the prompt, generated text,
-        # and other information.
-        outputs = self.llm.generate(prompts, self.sampling_params)
-
-        # Extract the response from the outputs
-        responses = [output.outputs[0].text for output in outputs]
-
-        return responses
+    def __repr__(self):
+        return f"Langchain Generator with Chain: {self.llm}"
+    
+class OpenAIGeneratorConfig(BaseConfig): 
+    """ Sampling Configs for generator """
+    
+    
+class OpenAIGenerator(BaseLLMGenerator): 
+    '''Argo generator for generating outputs'''
+    
+    def __init__(self, config:ArgoGeneratorConfig) -> None: 
+        from openai import OpenAI
+        
+        client = OpenAI()
+        
+        self.client = client
+        
+    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
+        """ Generate for OpenAI client """
+        
+        stream = self.client.chat.completions.create()        
+        
+        
+if __name__ == "__main__": 
+    
+    from openai import OpenAI
+    
+    client = OpenAI(base_url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/')
+    response = client.chat.completions.create(messages=[{'role': 'user', 'content': 'hi how are you doing?'}])
+    breakpoint()

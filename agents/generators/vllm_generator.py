@@ -46,6 +46,8 @@ class VLLMGeneratorConfig(BaseConfig):
     tensor_parallel_size: int = 1
     # number of log probs to return per output token
     logprobs: int = 1
+    # whether to use tqdm during inference
+    use_tqdm: bool = False
 
 
 class VLLMGenerator(BaseLLMGenerator):
@@ -84,8 +86,42 @@ class VLLMGenerator(BaseLLMGenerator):
             dtype='bfloat16',
             tensor_parallel_size=config.tensor_parallel_size,
         )
+        
+        # inference  attr 
+        self.use_tqdm = config.use_tqdm
 
-    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
+    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
+        """Generate response text from prompts.
+
+        Parameters
+        ----------
+        prompts : dict[str, str] | list[dict[str, str]]
+            The prompts to generate text from, of form: 
+            [
+                {'user': ..., 
+                'content': ...}, 
+                ...  
+            ]
+
+        Returns
+        -------
+        list[str]
+            A list of responses generated from the prompts
+            (one response per prompt).
+        """
+        # Ensure that the prompts are in a list
+        if isinstance(prompts, dict):
+            prompts = [prompts]
+
+        outputs = self.llm.chat(messages=prompts,
+                                sampling_params=self.sampling_params,
+                                use_tqdm=self.use_tqdm)
+        responses: list[str] = [output.outputs[0].text
+                                for output in outputs]
+
+        return responses
+        
+    def generate_with_logprobs(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
                                                                                 list[str],
                                                                                 list[float]]:
         """Generate response text from prompts.
@@ -124,7 +160,7 @@ class VLLMGenerator(BaseLLMGenerator):
                 'token_seq': token_seq,
                 'log_probs': log_prob_seq,
                 }
-
+    
     def extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> dict[list[str], list[float]]:
         """ processes through the log_probs objects to return a sequence of the log probs and the sequence of text """
 
