@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable, Any, Tuple
 
 from agents.generators import BaseLLMGenerator
+from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
@@ -47,7 +48,7 @@ class Actor:
         return sub_question
         
         
-class WorldReasoner: 
+class WorldReasoner(BaseReasoner): 
     
     def __init__(self, 
                  generator: BaseLLMGenerator,

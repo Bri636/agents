@@ -12,3 +12,7 @@ class BaseReasoner:
     @abstractmethod
     def generate_answer(self): 
         """ Generates Raw Text Answer Given a Question """
+        
+    @abstractmethod
+    def reset_pass(self): 
+        """ Resets the prompts for a reasoner """

@@ -8,56 +8,15 @@ from tqdm import tqdm
 from agents.gsm8k.utils import read_jsonl
 from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+from agents.reasoners.base_reasoner import BaseReasoner
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
 class GSMEvaluator: 
 
-    def __init__(self, 
-                 dataset: list[dict[str, str]],
-                 generator: VLLMGenerator, 
-                 question_prompt: GSMLlamaPromptTemplate,
-                 answer_prompt: GSMLlamaPromptTemplate, 
-                 parser: Callable
-                 ) -> None:
+    def __init__(self, dataset: list[dict[str, str]], reasoner: BaseReasoner) -> None:
         
         self.dataset = dataset
-        self.generator = generator
-        self.question_prompt = question_prompt
-        self.answer_prompt = answer_prompt
-        self.parser = parser
-    
-    def single_pass(self, idx: int, sample: dict[str, str], num_tries: int) -> Tuple[bool, bool | None]: 
-        """ 
-        Performs eval on one question from GSM8K and returns if successfully parsed, 
-        and if llm was correct or not
-        """
-        question = sample['question']
-        self.question_prompt.add('user', content=question)
-        self.answer_prompt.add('user', content=question)
-        
-        try: 
-            for _ in range(num_tries): 
-                sub_q = self.generator.generate(self.question_prompt.preprocess())[0]
-                self.question_prompt.add(**{'role': 'assistant', 'content': sub_q})
-                self.answer_prompt.add(**{'role': 'user', 'content': sub_q})
-                
-                sub_a = self.generator.generate(self.answer_prompt.preprocess())[0]
-                self.question_prompt.add('user', sub_a)
-                self.answer_prompt.add('assistant', sub_a)
-            
-                if filter_output_type(sub_a) == 'final_answer': 
-                    out = gsm_is_correct(idx, sub_a, sample)
-                    return True, out 
-                
-            return True, False # if run out of times, assume false
-                
-        except Exception as e: 
-            return False, None
-    
-    def reset_pass(self) -> None: 
-        """ Resets the prompts """
-        self.question_prompt.reset()
-        self.answer_prompt.reset()
+        self.reasoner = reasoner
     
     def evaluate(self, num_samples: int = 100, num_tries: int = 10) -> dict[str, Any]:
         """ Performs evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
@@ -68,10 +27,10 @@ class GSMEvaluator:
         num_completed = 0
         for idx, sample in tqdm(enumerate(samples)): 
             
-            finished, correct = self.single_pass(idx, sample, num_tries)
+            finished, correct = self.reasoner.generate_answer(idx, sample, num_tries)
             num_correct += finished and correct
             num_completed += finished
-            self.reset_pass()
+            self.reasoner.reset_pass()
 
             print(f'Correct: {num_correct}')
         percent_completed = (num_completed / num_samples) * 100
@@ -86,6 +45,10 @@ if __name__ == "__main__":
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
     from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
     from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    import pprint as pp
+    from agents.reasoners.wm_reasoner import WorldReasoner
+    from agents.reasoners.reasoner import LLMReasoner
+    from agents.prompts.standard_prompt import StandardGSMPromptTemplate
     
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
         """ Returns the average log probability"""
@@ -98,18 +61,23 @@ if __name__ == "__main__":
     cfg = ArgoGeneratorConfig()
     generator = LangChainFSLGenerator(cfg)
     
-    # dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    dataset = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
+    reasoner = WorldReasoner(generator, a_prompt, q_prompt, filter_output_type)
     
-    evaluator = GSMEvaluator(dataset, generator, q_prompt, a_prompt, None)
+    # dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
+    dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
+    
+    evaluator = GSMEvaluator(dataset, reasoner)
     
     metrics = evaluator.evaluate(20, 10)
-    
-    # breakpoint()
-    
-    import pprint as pp
     pp.pprint(metrics)
+    breakpoint()
     
+    prompt_2 = StandardGSMPromptTemplate()
+    reasoner_2 = LLMReasoner(generator, prompt_2, filter_output_type)
+    evaluator_2 = GSMEvaluator(dataset, reasoner_2)
+    metrics = evaluator_2.evaluate(20, 10)
+    pp.pprint(metrics)
+    breakpoint()
     # samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size = 1)
     # problem = samples[0]['question']
     # answer = samples[0]['answer']
