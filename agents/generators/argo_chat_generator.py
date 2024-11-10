@@ -18,6 +18,10 @@ from langchain_core.embeddings.embeddings import Embeddings
 from sqlalchemy import desc
 from langchain_core.prompts import PromptTemplate
 
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage, SystemMessage, AIMessage
+from typing import List, Dict
+
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
 
@@ -56,6 +60,10 @@ class ArgoGeneratorConfig(BaseConfig):
     user:str=Field(
         default='bhsu'
     )
+    logprobs: bool = Field(
+        default=False, 
+        description='Whether to return logprobs or not'
+    )
     
 class ArgoLLM(LLM):
     '''Overwritten langchain LLM model'''
@@ -65,6 +73,7 @@ class ArgoLLM(LLM):
     system: Optional[str] = 'None'
     top_p: Optional[float]= 0.0000001
     user: str = 'bhsu'
+    logprobs: bool = False
     
     @property
     def _llm_type(self) -> str:
@@ -119,11 +128,14 @@ class ArgoLLM(LLM):
     @property
     def _generations(self):
         return
+
     
-class ArgoGenerator(BaseLLMGenerator): 
+class LangChainFSLGenerator(BaseLLMGenerator): 
     '''Argo generator for generating outputs'''
     
-    def __init__(self, config:ArgoGeneratorConfig) -> None: 
+    def __init__(self, config: ArgoGeneratorConfig) -> None: 
+        from langchain_openai import ChatOpenAI
+        
         from langchain.chains.llm import LLMChain
         from langchain_core.prompts import ChatPromptTemplate
         
@@ -143,60 +155,40 @@ class ArgoGenerator(BaseLLMGenerator):
         self.llm = llm
         self.chain = chain
         
-    def generate(self, prompts: Union[str, list[str]]) -> list[str]: 
-        """Generate response text from prompts.
-
-        Parameters
-        ----------
-        prompts : str | list[str]
-            The prompts to generate text from.
-
-        Returns
-        -------
-        list[str]
-            A list of responses generated from the prompts
-            (one response per prompt).
-        """
+    def generate(self, prompts: Union[Dict[str, str], List[Dict[str, str]]]) -> List[str]:
+        """Generate output from a single dict or list of dicts in OpenAI message format."""
         
-        if isinstance(prompts, str): 
+        # Ensure prompts is a list
+        if isinstance(prompts, dict):
             prompts = [prompts]
-            
-        inputs = [{'input': prompt} for prompt in prompts]
-        raw_outputs = self.chain.batch(inputs)
-        outputs = [output['text'] for output in raw_outputs]
         
-        return outputs
-        
-    def __str__(self):
-        return f"Langchain Generator with Chain: {self.llm}"
+        # Concatenate messages with roles
+        def concatenate_messages_with_roles(messages: List[Dict[str, str]]) -> str:
+            return "\n".join(f"{msg['role']}:\n{msg['content']}" 
+                             for msg in messages if 'content' in msg and 'role' in msg)
 
-    def __repr__(self):
-        return f"Langchain Generator with Chain: {self.llm}"
-    
-class OpenAIGeneratorConfig(BaseConfig): 
-    """ Sampling Configs for generator """
-    
-    
-class OpenAIGenerator(BaseLLMGenerator): 
-    '''Argo generator for generating outputs'''
-    
-    def __init__(self, config:ArgoGeneratorConfig) -> None: 
-        from openai import OpenAI
+        # Convert prompts into a single formatted string with roles
+        concatenated_prompt = concatenate_messages_with_roles(prompts)
         
-        client = OpenAI()
+        # Call LangChain's LLMChain with the concatenated prompt
+        response = self.chain.run(input=concatenated_prompt)
         
-        self.client = client
-        
-    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
-        """ Generate for OpenAI client """
-        
-        stream = self.client.chat.completions.create()        
+        return [response]
         
         
-if __name__ == "__main__": 
+# if __name__ == "__main__": 
     
-    from openai import OpenAI
+#     # from openai import OpenAI
     
-    client = OpenAI(base_url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/')
-    response = client.chat.completions.create(messages=[{'role': 'user', 'content': 'hi how are you doing?'}])
-    breakpoint()
+#     # client = OpenAI(base_url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/')
+#     # response = client.chat.completions.create(messages=[{'role': 'user', 'content': 'hi how are you doing?'}])
+#     # breakpoint()
+    
+#     cfg = ArgoGeneratorConfig()
+    
+#     generator = LangChainFSLGenerator(cfg)
+    
+#     output = generator.generate([{'role': 'user', 'content': 'hi how are you doing?'}, 
+#                                  {'role': 'assistant', 'content': 'I am doing fine, how are you doing?'}])
+    
+#     breakpoint()

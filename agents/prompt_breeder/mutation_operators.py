@@ -1,12 +1,12 @@
 import random
 import re
 import os
-from agents.prompts.prompt_breeder.types import Population, EvolutionUnit
+from agents.prompt_breeder.types import Population, EvolutionUnit
 from typing import List
 # from sentence_transformers import SentenceTransformer, util
-from agents.prompts.prompt_breeder.mutation_prompts import mutation_prompts
-from agents.prompts.prompt_breeder.thinking_styles import thinking_styles
-from agents.prompts.prompt_breeder import gsm
+from agents.prompt_breeder.mutation_prompts import mutation_prompts
+from agents.prompt_breeder.thinking_styles import thinking_styles
+from agents.prompt_breeder import gsm
 
 from dotenv import load_dotenv
 from rich import print

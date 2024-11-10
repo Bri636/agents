@@ -33,7 +33,7 @@ class ArgoGeneratorConfig(BaseConfig):
     
     _name: str = 'ArgoGenerator'
     
-    model_type:Literal['gpt35', 'gpt4', 'gpt4o', 'gpt4turbo', 'o1preview']=Field(
+    model_type:Literal['gpt35', 'gpt4', 'gpt4o', 'gpt4turbo', 'gpto1preview']=Field(
         default='gpt4turbo', 
         description='What kind of language model to use from openai'
     )
@@ -176,11 +176,11 @@ class ArgoGenerator(BaseLLMGenerator):
     
 if __name__ == "__main__": 
     
-    cfg = ArgoGeneratorConfig(url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/', user='cels')
+    cfg = ArgoGeneratorConfig(model_type='gpto1preview')
     
     generator = ArgoGenerator(cfg)
     breakpoint()
-    result = generator.generate('hello how are you doing?')
+    result = generator.generate(['what is the gcd(56, 15)'])
     
     breakpoint()
         

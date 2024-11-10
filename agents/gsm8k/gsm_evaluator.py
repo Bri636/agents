@@ -84,6 +84,7 @@ class GSMEvaluator:
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
+    from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
     from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
     
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
@@ -92,14 +93,15 @@ if __name__ == "__main__":
     
     q_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('question', 1, 'question')
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')
-    generator_cfg = VLLMGeneratorConfig()
-    generator = VLLMGenerator(generator_cfg)
+    # generator_cfg = VLLMGeneratorConfig()
+    # generator = VLLMGenerator(generator_cfg)
+    cfg = ArgoGeneratorConfig()
+    generator = LangChainFSLGenerator(cfg)
     
-    dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
+    # dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
+    dataset = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
     
     evaluator = GSMEvaluator(dataset, generator, q_prompt, a_prompt, None)
-    
-    # breakpoint()
     
     metrics = evaluator.evaluate(20, 10)
     
