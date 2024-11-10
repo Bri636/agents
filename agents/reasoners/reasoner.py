@@ -69,7 +69,7 @@ if __name__=="__main__":
     from agents.gsm8k.utils import read_jsonl
     from tqdm import tqdm
     
-    dataset = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
+    dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
     
     # cfg = ArgoGeneratorConfig()
     cfg = VLLMGeneratorConfig()

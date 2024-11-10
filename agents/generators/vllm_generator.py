@@ -48,6 +48,7 @@ class VLLMGeneratorConfig(BaseConfig):
     logprobs: int = 1
     # whether to use tqdm during inference
     use_tqdm: bool = False
+    dtype: str = 'float16'
 
 
 class VLLMGenerator(BaseLLMGenerator):
@@ -83,7 +84,7 @@ class VLLMGenerator(BaseLLMGenerator):
         self.llm = LLM(
             model=config.llm_name,
             trust_remote_code=config.trust_remote_code,
-            dtype='bfloat16',
+            dtype=config.dtype,
             tensor_parallel_size=config.tensor_parallel_size,
         )
         
