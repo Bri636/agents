@@ -11,15 +11,17 @@ from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
+
 class GSMEvaluator: 
 
-    def __init__(self, dataset: list[dict[str, str]], reasoner: BaseReasoner) -> None:
-        
+    def __init__(self, dataset: list[dict[str, str]], reasoner: BaseReasoner, seed: int=10) -> None:
         self.dataset = dataset
         self.reasoner = reasoner
+        self.seed = seed
     
     def evaluate(self, num_samples: int = 100, num_tries: int = 10) -> dict[str, Any]:
         """ Performs evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
+        random.seed(self.seed)
         sample_idx = random.sample(range(len(self.dataset)), num_samples)
         samples = [self.dataset[i] for i in sample_idx]
         
@@ -50,6 +52,8 @@ if __name__ == "__main__":
     from agents.reasoners.reasoner import LLMReasoner
     from agents.prompts.standard_prompt import StandardGSMPromptTemplate
     
+    random.seed(10)
+    
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
         """ Returns the average log probability"""
         return float(sum(log_probs_seq) / len(log_probs_seq))
@@ -60,45 +64,19 @@ if __name__ == "__main__":
     # generator = VLLMGenerator(generator_cfg)
     cfg = ArgoGeneratorConfig()
     generator = LangChainFSLGenerator(cfg)
-    
     reasoner = WorldReasoner(generator, a_prompt, q_prompt, filter_output_type)
     
     # dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    
+    # dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
+    dataset = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
     evaluator = GSMEvaluator(dataset, reasoner)
     
-    metrics = evaluator.evaluate(20, 10)
+    metrics = evaluator.evaluate(15, 10)
     pp.pprint(metrics)
-    breakpoint()
     
     prompt_2 = StandardGSMPromptTemplate()
     reasoner_2 = LLMReasoner(generator, prompt_2, filter_output_type)
     evaluator_2 = GSMEvaluator(dataset, reasoner_2)
-    metrics = evaluator_2.evaluate(20, 10)
-    pp.pprint(metrics)
+    metrics_2 = evaluator_2.evaluate(15, 10)
+    pp.pprint(metrics_2)
     breakpoint()
-    # samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size = 1)
-    # problem = samples[0]['question']
-    # answer = samples[0]['answer']
-    
-    # q_prompt.add('user', content=problem)
-    # a_prompt.add('user', content=problem)
-    
-    # breakpoint()
-    
-    # for _ in range(10): 
-    #     sub_q_dict = generator.generate(q_prompt.preprocess())
-    #     q_prompt.add(**{'role': 'assistant', 'content': sub_q_dict['text'][0]})
-    #     a_prompt.add(**{'role': 'user', 'content': sub_q_dict['text'][0]})
-        
-    #     sub_a_dict = generator.generate(a_prompt.preprocess())
-    #     q_prompt.add('user', sub_a_dict['text'][0])
-    #     a_prompt.add('assistant', sub_a_dict['text'][0])
-        
-    #     if filter_output_type(sub_a_dict['text'][0]) == 'final_answer': 
-    #         break
-        
-    # out = gsm_is_correct(sub_a_dict['text'][0], samples[0])
-    # breakpoint()
-    

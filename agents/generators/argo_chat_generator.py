@@ -147,6 +147,7 @@ class LangChainFSLGenerator(BaseLLMGenerator):
         setattr(llm, 'system', config.system)
         setattr(llm, 'top_p', config.top_p)
         setattr(llm, 'user', config.user)
+        setattr(llm, 'logprobs', config.logprobs)
         
         prompt = ChatPromptTemplate.from_template('{input}')
         
@@ -174,21 +175,121 @@ class LangChainFSLGenerator(BaseLLMGenerator):
         response = self.chain.run(input=concatenated_prompt)
         
         return [response]
+    
+    
+    def generate_with_logprobs(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
+                                                                                list[str],
+                                                                                list[float]]:
+        """Generate response text from prompts.
+
+        Parameters
+        ----------
+        prompts : dict[str, str] | list[dict[str, str]]
+            The prompts to generate text from, of form: 
+            [
+                {'user': ..., 
+                'content': ...}, 
+                ...  
+            ]
+
+        Returns
+        -------
+        list[str]
+            A list of responses generated from the prompts
+            (one response per prompt).
+        """
+        # Ensure that the prompts are in a list
+        if isinstance(prompts, dict):
+            prompts = [prompts]
+
+        outputs = self.llm.chat(messages=prompts,
+                                sampling_params=self.sampling_params,
+                                use_tqdm=True)
+        responses: list[str] = [output.outputs[0].text
+                                for output in outputs]
+        log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs
+                                               for output in outputs]
+
+        token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
+
+        return {'text': responses,
+                'token_seq': token_seq,
+                'log_probs': log_prob_seq,
+                }
+    
+    # def extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> dict[list[str], list[float]]:
+    #     """ processes through the log_probs objects to return a sequence of the log probs and the sequence of text """
+
+    #     token_seq = []
+    #     log_prob_seq = []
+    #     for log_prob_dict in log_probs:
+    #         log_prob_obj: Logprob = log_prob_dict.values()
+    #         log_prob, token = log_prob_obj.logprob, log_prob_obj.decoded_token
+    #         token_seq.append(token)
+    #         log_prob_seq.append(log_prob)
+
+    #     return {
+    #         'tokens': token_seq,
+    #         'log_probs': log_prob_seq
+    #     }
         
         
-# if __name__ == "__main__": 
+if __name__ == "__main__": 
     
-#     # from openai import OpenAI
+    import requests
+    import json
+
+    # API endpoint to POST
+    url = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+
+    # Data to be sent as a POST in JSON format
+    data = {
+        "model": ModelType.GPT4TURBO.value,
+        "user": "bhsu",
+        "prompt": ["What is your name", "What is your favorite color?"],
+        "logprobs": True
+    }
     
-#     # client = OpenAI(base_url='https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/')
-#     # response = client.chat.completions.create(messages=[{'role': 'user', 'content': 'hi how are you doing?'}])
-#     # breakpoint()
+    #     model_type: ModelType = ModelType.GPT4
+    # url: str = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+    # temperature: Optional[float] = 0.0
+    # system: Optional[str] = 'None'
+    # top_p: Optional[float]= 0.0000001
+    # user: str = 'bhsu'
+    # logprobs: bool = False
     
-#     cfg = ArgoGeneratorConfig()
+    data = {
+            "user": "bhsu",
+            "model": ModelType.GPT4TURBO.value,
+            "system": "",
+            "temperature": 0,
+            "top_p":  0.0000001, 
+            "logprobs": True,
+            "prompt": ['hello how are you doing?'],
+            "stop": []
+        }
+
+    # Convert the dict to JSON
+    payload = json.dumps(data)
+
+    # Adding a header stating that the content type is JSON
+    headers = {"Content-Type": "application/json"}
+
+    # Send POST request
+    response = requests.post(url, data=payload, headers=headers)
+
+    # Receive the response data
+    print("Status Code:", response.status_code)
+    print("JSON Response ", response.json())
+
+
+    # Usage
+    llm = ArgoLLM()
+    llm.logprobs = True  # Enable logprobs if needed
+    response, logprobs = llm._call(prompt="Hi how are you?")
+
     
-#     generator = LangChainFSLGenerator(cfg)
+    output = generator.generate([{'role': 'user', 'content': 'hi how are you doing?'}, 
+                                 {'role': 'assistant', 'content': 'I am doing fine, how are you doing?'}])
     
-#     output = generator.generate([{'role': 'user', 'content': 'hi how are you doing?'}, 
-#                                  {'role': 'assistant', 'content': 'I am doing fine, how are you doing?'}])
-    
-#     breakpoint()
+    breakpoint()

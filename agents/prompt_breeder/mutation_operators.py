@@ -1,26 +1,28 @@
 import random
 import re
 import os
+
+from agents.generators import BaseLLMGenerator
 from agents.prompt_breeder.types import Population, EvolutionUnit
 from typing import List
 # from sentence_transformers import SentenceTransformer, util
 from agents.prompt_breeder.mutation_prompts import mutation_prompts
 from agents.prompt_breeder.thinking_styles import thinking_styles
-from agents.prompt_breeder import gsm
+from agents.gsm8k.utils import read_jsonl
 
 from dotenv import load_dotenv
 from rich import print
 
 load_dotenv()
 
-# gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
+gsm8k_examples = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
 
 # need below for estimation_distribution_mutation, not currently using.
 # model = SentenceTransformer('multi-qa-distilbert-cos-v1')
 # print(model) 
 
 # Direct Mutation mutators
-def zero_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: Client, **kwargs) -> EvolutionUnit:
+def zero_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """Generates a new task-prompt P by concatenating the problem description D with the prompt 
     'a list of 100 hints:'. New task-prompt P is the first generated hint.
     
@@ -39,7 +41,7 @@ def zero_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: 
     
     return unit 
 
-def first_order_prompt_gen(unit: EvolutionUnit, model: Client, **kwargs) -> EvolutionUnit:
+def first_order_prompt_gen(unit: EvolutionUnit, model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """Concatenate the mutation prompt M to the parent task-prompt P and pass it to the LLM to produce P'
     
     Returns: 
@@ -62,7 +64,7 @@ def estimation_distribution_mutation(unit: EvolutionUnit, population_units: List
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
     pass
-def lineage_based_mutation(unit: EvolutionUnit, elites: List[EvolutionUnit], model: Client, **kwargs) -> EvolutionUnit:
+def lineage_based_mutation(unit: EvolutionUnit, elites: List[EvolutionUnit], model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """Using the stored history of best units, provide the LLM this list in chronological order to produce a novel prompt as continuation.
     
     Returns: 
@@ -76,7 +78,7 @@ def lineage_based_mutation(unit: EvolutionUnit, elites: List[EvolutionUnit], mod
     return unit
 
 # Hypermutation
-def zero_order_hypermutation(unit: EvolutionUnit, problem_description: str, model: Client, **kwargs) -> EvolutionUnit:
+def zero_order_hypermutation(unit: EvolutionUnit, problem_description: str, model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """ Concatenate the original problem_description to a randomly sampled thinking-style and feed it to the LLM to generate a new mutation-prompt.
     
     Returns: 
@@ -86,7 +88,7 @@ def zero_order_hypermutation(unit: EvolutionUnit, problem_description: str, mode
     unit.M = model.generate(problem_description + " " + RANDOM_THINKING_STYLE)[0].text
     return unit
 
-def first_order_hypermutation(unit: EvolutionUnit, model: Client, **kwargs) -> EvolutionUnit:
+def first_order_hypermutation(unit: EvolutionUnit, model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """ Concatenate the hyper-mutation prompt "Please summarize and improve the following instruction:"
     to a mutation-prompt to that the LLM generates a new mutation-prompt. This new mutation-prompt is then 
     instantly applied to the task-prompt of that unit.
@@ -101,7 +103,7 @@ def first_order_hypermutation(unit: EvolutionUnit, model: Client, **kwargs) -> E
 
 
 # Lamarckian Mutation
-def working_out_task_prompt(unit: EvolutionUnit, model: Client, **kwargs) -> EvolutionUnit:
+def working_out_task_prompt(unit: EvolutionUnit, model: BaseLLMGenerator, **kwargs) -> EvolutionUnit:
     """ A 'lamarckian' mutation operator similar to instruction induction in APE.
 
     As far as I can understand, give it both the Q and A from the gsm8k dataset, 
@@ -148,7 +150,7 @@ POST_MUTATORS = [
     context_shuffling
 ]
 
-def mutate(population: Population, model: Client) -> Population:
+def mutate(population: Population, model: BaseLLMGenerator) -> Population:
     """Select and apply a random mutator"""
     # steps
     # 1. parse through the population, grouping each evo unit by 2
