@@ -101,9 +101,14 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         """ Add new content to the prompt """
         self.fsl_prompt.append({'role': role, 'content': content})
         
-    def pop(self) -> None: 
-        """ Pops the most recent interaction from prompt """
-        self.fsl_prompt.pop(-1)
+    def pop(self, indices: list[int] = [-1]) -> None:
+        """Removes specified indices from the prompt, supporting both positive and negative indices."""
+        # Convert any negative indices to their positive equivalents
+        indices_set = {i if i >= 0 else len(self.fsl_prompt) + i for i in indices}
+        # Ensure all indices are within the valid range
+        indices_set = {i for i in indices_set if 0 <= i < len(self.fsl_prompt)}
+        # Create a new list excluding the elements at the specified indices
+        self.fsl_prompt = [item for idx, item in enumerate(self.fsl_prompt) if idx not in indices_set]
         
     def reset(self) -> None: 
         """ Resets the whole prompt to the base fsl prompt """
@@ -131,7 +136,7 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    from agents.gsm8k.utils import batch_sample_gsm, filter_output_type, gsm_is_correct
     
     def log_prob_reward(log_probs_seq: list[float]) -> float: 
         """ Returns the average log probability"""
@@ -141,13 +146,12 @@ if __name__ == "__main__":
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')
     
     breakpoint()
-    
     q_prompt.add(**{'role': 'user', 'content': "TESTING"})
-    
-    
+    q_prompt.add(**{'role': 'user', 'content': "OTHER_TESTING"})
     breakpoint()
     
-    
+    q_prompt.pop([-1, -2])
+    breakpoint()
     
     generator_cfg = VLLMGeneratorConfig()
     generator = VLLMGenerator(generator_cfg)

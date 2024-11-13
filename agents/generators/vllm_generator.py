@@ -87,8 +87,8 @@ class VLLMGenerator(BaseLLMGenerator):
             dtype=config.dtype,
             tensor_parallel_size=config.tensor_parallel_size,
         )
-        
-        # inference  attr 
+
+        # inference  attr
         self.use_tqdm = config.use_tqdm
 
     def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
@@ -121,10 +121,10 @@ class VLLMGenerator(BaseLLMGenerator):
                                 for output in outputs]
 
         return responses
-        
+
     def generate_with_logprobs(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
-                                                                                list[str],
-                                                                                list[float]]:
+                                                                                              list[str],
+                                                                                              list[float]]:
         """Generate response text from prompts.
 
         Parameters
@@ -152,23 +152,20 @@ class VLLMGenerator(BaseLLMGenerator):
                                 use_tqdm=True)
         responses: list[str] = [output.outputs[0].text
                                 for output in outputs]
-        log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs
-                                               for output in outputs]
-
+        log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs for output in outputs][0]
         token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
-
         return {'text': responses,
                 'token_seq': token_seq,
                 'log_probs': log_prob_seq,
                 }
-    
+
     def extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> dict[list[str], list[float]]:
         """ processes through the log_probs objects to return a sequence of the log probs and the sequence of text """
 
         token_seq = []
         log_prob_seq = []
         for log_prob_dict in log_probs:
-            log_prob_obj: Logprob = log_prob_dict.values()
+            log_prob_obj: Logprob = next(iter(log_prob_dict.values())) # extract logprobs object
             log_prob, token = log_prob_obj.logprob, log_prob_obj.decoded_token
             token_seq.append(token)
             log_prob_seq.append(log_prob)
@@ -177,3 +174,16 @@ class VLLMGenerator(BaseLLMGenerator):
             'tokens': token_seq,
             'log_probs': log_prob_seq
         }
+        
+if __name__=="__main__": 
+    
+    from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
+    # from agents.prompts.gsm_llama_prompts ...
+    
+    data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
+    batch_size = 16
+    
+    dataset = read_jsonl(data_path)
+    samples = batch_sample_gsm(dataset, batch_size)
+    
+    breakpoint()

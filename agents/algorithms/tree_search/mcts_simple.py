@@ -17,7 +17,6 @@ import numpy as np
 from tqdm import trange
 import gymnasium as gym
 from textwrap import dedent
-from agents.environments.game import GymGame
 from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig, 
                                                 State, Action, Example, Trace)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable, Any, Tuple
 
 from agents.generators import BaseLLMGenerator
+from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
@@ -46,6 +47,17 @@ class Actor:
         sub_question = self.generator.generate(question_prompt.preprocess())[0]
         
         return sub_question
+    
+    def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict: 
+        """ Returns the next sub_question to ask"""
+        assert isinstance(self.generator, VLLMGenerator), f"""
+        LogProbs only supported with VLLM for now...
+        """
+        sub_question = self.generator.generate_with_logprobs(question_prompt.preprocess())
+        return {'text': sub_question['text'][0],
+                'token_seq': sub_question['token_seq'],
+                'log_probs': sub_question['log_probs'],
+                }
         
         
 class WorldReasoner(BaseReasoner): 

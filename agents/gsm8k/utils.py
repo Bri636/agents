@@ -77,8 +77,11 @@ def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str], verbose: 
     return bool(answer == gold_answer)
 
 # mine 
-def batch_sample_qa_pairs(dataset: list[dict[str, str]], batch_size: int) -> list[dict[str, str]]: 
-    """ Sample batches from gsm8k dataset """
+def batch_sample_gsm(dataset: list[dict[str, str]], batch_size: int) -> list[dict[str, str]]: 
+    """ 
+    Sample batches of dicts from gsm8k dataset
+    [{question: ..., answer: ...}, ...]
+    """
     indices: list[int] = random.sample(range(len(dataset)), batch_size)
     sampled_data = [dataset[i] for i in indices]
     
