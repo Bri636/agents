@@ -24,6 +24,7 @@ from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, Sea
                                                 State, Action, Example, Trace)
 from agents.utils import calculate_returns
 # from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
+from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.algorithms.tree_search.mcts_node import MCTSNode
 from agents.reasoners.wm_reasoner import WorldModel, Actor
 
@@ -142,12 +143,14 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         sub_questions_pkg: list[dict[str, str | list[str] | list[float]]] = [actor.act_logprobs(state) 
                                                                          for _ in range(num_children)]
         sub_questions = [sub_question['text'] for sub_question in sub_questions_pkg]
-        log_probs = [sub_question['log_probs'] for sub_question in sub_questions_pkg]
+        
+        # # NOTE: THIS MUST BE LOG PROBS FOR ANSWER
+        # log_probs = [sub_question['log_probs'] for sub_question in sub_questions_pkg]
 
         children = []
-        for sub_question, log_prob in zip(sub_questions, log_probs):
+        for sub_question in sub_questions:
             answer_prompt.add(**{'role': 'user', 'content': sub_question})
-            sub_answer = world_model.step(answer_prompt)
+            sub_answer, log_prob = world_model.step_logprobs(answer_prompt).values()
             question_prompt.add(
                 **{'role': 'assistant', 'content': sub_question})
             question_prompt.add(**{'role': 'user', 'content': sub_answer})
@@ -160,51 +163,59 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             children.append(child_node)
 
         node.children = children
+        
+    def simulate_node(self, 
+                      path: list[MCTSNode], 
+                      actor: Actor, 
+                      world_model: WorldModel, 
+                      question_prompt: GSMLlamaPromptTemplate | BasePromptTemplate, 
+                      answer_prompt: GSMLlamaPromptTemplate | BasePromptTemplate,
+                      max_tries: int
+                      ) -> None: 
+        """ Simulates a single node until end of problem """
+        def episode_stop_condition(step: int, terminated: bool) -> bool: 
+            """ True if max_tries exceeded or terminal"""
+            return bool(step > max_tries or terminated)
+        
+        question_prompt = copy.deepcopy(question_prompt)
+        answer_prompt = copy.deepcopy(answer_prompt)
+        
+        child_idx: int = random.sample(range(len(path[-1].children)), 1)[0]
+        node_to_sim: MCTSNode = path[-1].children[child_idx] # for now, just first node added
+        state: GSMLlamaPromptTemplate = copy.deepcopy(node_to_sim.state)
+        
+        step = 0
+        terminated = False
+        rewards = []
+        while not episode_stop_condition(step, terminated):
+             
+            sub_question = actor.act_logprobs(state) 
+            question_prompt.add(**{'role': 'assistant', 'content': sub_question})
+            answer_prompt.add(**{'role': 'user', 'content': sub_question})
 
-        # question_prompt = copy.deepcopy(question_prompt)
-        # answer_prompt = copy.deepcopy(answer_prompt)
+            sub_answer, log_prob = world_model.step_logprobs(answer_prompt).values()
+            question_prompt.add('user', sub_answer)
+            answer_prompt.add('assistant', sub_answer)
+            
+            # NOTE: finish out evaluation for big reward
+            rewards.append(np.mean(log_prob))
+            if filter_output_type(sub_answer)=='final_answer': 
+                out = gsm_is_correct(0, sub_answer, sample)
+                terminated = True
+                
+            
+            
 
-        # question_prompt.add('user', content=question)
-        # answer_prompt.add('user', content=question)
-
-        # state:GSMLlamaPromptTemplate = copy.deepcopy(node.state) # current prompt that encodes the history of qa interactions
-        # actions:list[str] = list(map(self.actor.act(state.preprocess()),
-        #                    [_ for _ in range(num_children)]))
-
-        # children = []
-        # for action in actions:
-        #     answer_prompt.add({'role': ''})
-        #     next_obs, reward, terminated, *_ = world_model.step()
-
-        # breakpoint()
-        # children = []
-        # for action, env in zip(actions, envs):
-        #     next_obs, reward, terminated, *_ = env.step(action)
-        #     child = MCTSNode(state=next_obs,
-        #                      action=action,
-        #                      reward=None, # NOTE: we do not add reward to this node for now
-        #                      parent=node,
-        #                      is_terminal=terminated,
-        #                      calc_q=self.calc_q)
-        #     children.append(child)
-        # node.children = children # update leaf/terminal node with children
-
-        # action_space = list(range(environment.action_cardinality))
-        # actions:list[int] = list(random.sample(action_space, num_children))
-        # # TODO: make a reset-able environment for gym.Env classes
-        # envs:list[GymGame] = [environment.get_copy() for _ in actions]
-
-        # children = []
-        # for action, env in zip(actions, envs):
-        #     next_obs, reward, terminated, *_ = env.step(action)
-        #     child = MCTSNode(state=next_obs,
-        #                      action=action,
-        #                      reward=None, # NOTE: we do not add reward to this node for now
-        #                      parent=node,
-        #                      is_terminal=terminated,
-        #                      calc_q=self.calc_q)
-        #     children.append(child)
-        # node.children = children # update leaf/terminal node with children
+    # def _simulate(self, path: list[MCTSNode]):
+    #     """ Goes through all of the children """
+    #     node = path[-1]
+    #     while True: # keep going 
+    #         if self._is_terminal_with_depth_limit(node) or len(node.children) == 0: # if node is terminal or at depth limit or no children, 
+    #             return
+    #         child_rewards = [child.reward for child in node.children]
+    #         node = node.children[self.simulate_choice(child_rewards)] # select child with best reward 
+            
+    #         path.append(node) # add to path then iterate again 
 
 
 if __name__ == "__main__":
@@ -245,3 +256,5 @@ if __name__ == "__main__":
     mcts.expand(root, actor, world_model, question_prompt, answer_prompt, 5)
 
     breakpoint()
+
+

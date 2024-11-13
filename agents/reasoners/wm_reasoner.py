@@ -21,6 +21,16 @@ class WorldModel:
         sub_answer = self.generator.generate(answer_prompt.preprocess())[0]
         
         return sub_answer
+    
+    def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict: 
+        """ Returns the next sub_question to ask"""
+        assert isinstance(self.generator, VLLMGenerator), f"""
+        LogProbs only supported with VLLM for now...
+        """
+        sub_answer = self.generator.generate_with_logprobs(answer_prompt.preprocess())
+        return {'text': sub_answer['text'][0],
+                'log_probs': sub_answer['log_probs'],
+                }
         
     def is_terminal(self): 
         ...
