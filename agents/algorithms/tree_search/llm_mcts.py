@@ -170,52 +170,47 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                       world_model: WorldModel, 
                       question_prompt: GSMLlamaPromptTemplate | BasePromptTemplate, 
                       answer_prompt: GSMLlamaPromptTemplate | BasePromptTemplate,
-                      max_tries: int
+                      max_tries: int, 
+                      sample: dict, 
+                      win_reward: float = 50
                       ) -> None: 
         """ Simulates a single node until end of problem """
         def episode_stop_condition(step: int, terminated: bool) -> bool: 
             """ True if max_tries exceeded or terminal"""
             return bool(step > max_tries or terminated)
         
-        question_prompt = copy.deepcopy(question_prompt)
-        answer_prompt = copy.deepcopy(answer_prompt)
-        
         child_idx: int = random.sample(range(len(path[-1].children)), 1)[0]
         node_to_sim: MCTSNode = path[-1].children[child_idx] # for now, just first node added
         state: GSMLlamaPromptTemplate = copy.deepcopy(node_to_sim.state)
         
+        question_prompt = copy.deepcopy(state)
+        answer_prompt = copy.deepcopy(state) # has to be answer prompt
+        breakpoint()
         step = 0
         terminated = False
         rewards = []
         while not episode_stop_condition(step, terminated):
-             
-            sub_question = actor.act_logprobs(state) 
+            sub_question = actor.act(state)
             question_prompt.add(**{'role': 'assistant', 'content': sub_question})
             answer_prompt.add(**{'role': 'user', 'content': sub_question})
-
+            breakpoint()
             sub_answer, log_prob = world_model.step_logprobs(answer_prompt).values()
             question_prompt.add('user', sub_answer)
             answer_prompt.add('assistant', sub_answer)
-            
+            breakpoint()
             # NOTE: finish out evaluation for big reward
             rewards.append(np.mean(log_prob))
             if filter_output_type(sub_answer)=='final_answer': 
                 out = gsm_is_correct(0, sub_answer, sample)
+                if out: 
+                    rewards.append(win_reward)
                 terminated = True
+                breakpoint()
                 
-            
-            
-
-    # def _simulate(self, path: list[MCTSNode]):
-    #     """ Goes through all of the children """
-    #     node = path[-1]
-    #     while True: # keep going 
-    #         if self._is_terminal_with_depth_limit(node) or len(node.children) == 0: # if node is terminal or at depth limit or no children, 
-    #             return
-    #         child_rewards = [child.reward for child in node.children]
-    #         node = node.children[self.simulate_choice(child_rewards)] # select child with best reward 
-            
-    #         path.append(node) # add to path then iterate again 
+        rollout_reward = sum(rewards)
+        node = path[-1].children[child_idx]
+        node.reward = rollout_reward
+        path.append(node)
 
 
 if __name__ == "__main__":
@@ -252,9 +247,14 @@ if __name__ == "__main__":
     generator = VLLMGenerator(generator_cfg)
     actor = Actor(generator)
     world_model = WorldModel(generator)
+    
 
-    mcts.expand(root, actor, world_model, question_prompt, answer_prompt, 5)
+    path = mcts.select(root) # select a path from root node down to leaf node or not that is not fully expanded
+
+    if not mcts._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
+        mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5) # expand on last node --> make all of the children 
+        breakpoint()
+        mcts.simulate_node(path, actor, world_model, question_prompt, answer_prompt, 10, samples[0]) # simulate the path
+
 
     breakpoint()
-
-

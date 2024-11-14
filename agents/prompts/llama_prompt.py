@@ -96,23 +96,37 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         
         self._fsl_prompt_base = copy.deepcopy(fsl_prompt_base)
         self.fsl_prompt = copy.deepcopy(fsl_prompt_base)
+        self._history = []  # Initialize the change history
+        self._fsl_prompt_type = fsl_prompt_type
+        
+    @property
+    def prompt_type(self) -> str: 
+        return self._fsl_prompt_type
+    
+    @property
+    def history(self) -> list[dict[str, str]]:
+        """Returns a copy of the change history to prevent in-place modification."""
+        return copy.deepcopy(self._history)
         
     def add(self, role: Literal['user', 'assistant', 'system'], content: str) -> None: 
         """ Add new content to the prompt """
         self.fsl_prompt.append({'role': role, 'content': content})
+        self._history.append({'role': role, 'content': content})  # Track the addition
         
     def pop(self, indices: list[int] = [-1]) -> None:
-        """Removes specified indices from the prompt, supporting both positive and negative indices."""
-        # Convert any negative indices to their positive equivalents
+        """Removes specified indices from the prompt and also adjusts change history."""
         indices_set = {i if i >= 0 else len(self.fsl_prompt) + i for i in indices}
-        # Ensure all indices are within the valid range
         indices_set = {i for i in indices_set if 0 <= i < len(self.fsl_prompt)}
-        # Create a new list excluding the elements at the specified indices
+        # Track the items to be removed
+        removed_items = [item for idx, item in enumerate(self.fsl_prompt) if idx in indices_set]
+        # Remove these items from both fsl_prompt and _change_history if they are in _change_history
         self.fsl_prompt = [item for idx, item in enumerate(self.fsl_prompt) if idx not in indices_set]
+        self._history = [item for item in self._history if item not in removed_items]
         
     def reset(self) -> None: 
         """ Resets the whole prompt to the base fsl prompt """
         self.fsl_prompt = copy.deepcopy(self._fsl_prompt_base)
+        self._history = []  # Clear the change history
 
     def preprocess(self, **kwargs) -> list[dict[str, str]]:
         """
@@ -133,6 +147,36 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
     def __str__(self) -> str:
         return pp.pformat(self.fsl_prompt)
     
+    def copy_history(self, prompt: GSMLlamaPromptTemplate) -> None:
+        """
+        Sets the current prompt and history based on another GSMLlamaPromptTemplate instance.
+        If the current prompt type is the opposite of the input prompt type, swaps 'user' and 'assistant' roles
+        in the copied history and appends the history to the current fsl_prompt.
+        
+        Parameters
+        ----------
+        prompt : GSMLlamaPromptTemplate
+            The instance from which to copy the prompt and history.
+        """
+        if not isinstance(prompt, GSMLlamaPromptTemplate):
+            raise TypeError("Prompt must be an instance of GSMLlamaPromptTemplate.")
+        breakpoint()
+        # Determine if we need to swap roles by checking if the prompt types are different
+        if self._fsl_prompt_type != prompt._fsl_prompt_type:
+            # Swap roles in the copied history if prompt types are opposite
+            modified_history = [
+                {'role': 'assistant' if entry['role'] == 'user' else 'user' if entry['role'] == 'assistant' else entry['role'],
+                'content': entry['content']}
+                for entry in prompt._history
+            ]
+        else:
+            # Directly copy the history if no swapping is needed
+            modified_history = copy.deepcopy(prompt._history)
+        
+        # Update self._history and append to self.fsl_prompt
+        self._history = modified_history
+        self.fsl_prompt.extend(modified_history)
+
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
@@ -147,8 +191,11 @@ if __name__ == "__main__":
     
     breakpoint()
     q_prompt.add(**{'role': 'user', 'content': "TESTING"})
-    q_prompt.add(**{'role': 'user', 'content': "OTHER_TESTING"})
+    q_prompt.add(**{'role': 'assistant', 'content': "OTHER_TESTING"})
     breakpoint()
+    
+    test_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
+    test_prompt.copy_history(q_prompt)
     
     q_prompt.pop([-1, -2])
     breakpoint()
@@ -157,7 +204,7 @@ if __name__ == "__main__":
     generator = VLLMGenerator(generator_cfg)
     
     dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    samples: list[dict] = batch_sample_qa_pairs(dataset, batch_size = 1)
+    samples: list[dict] = batch_sample_gsm(dataset, batch_size = 1)
     problem = samples[0]['question']
     answer = samples[0]['answer']
     
