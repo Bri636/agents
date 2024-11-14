@@ -168,50 +168,82 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                       path: list[MCTSNode], 
                       actor: Actor, 
                       world_model: WorldModel, 
-                      question_prompt: GSMLlamaPromptTemplate | BasePromptTemplate, 
-                      answer_prompt: GSMLlamaPromptTemplate | BasePromptTemplate,
                       max_tries: int, 
                       sample: dict, 
+                      question_prompt: GSMLlamaPromptTemplate, 
+                      answer_prompt: GSMLlamaPromptTemplate,
                       win_reward: float = 50
-                      ) -> None: 
+                      ) -> bool: 
         """ Simulates a single node until end of problem """
         def episode_stop_condition(step: int, terminated: bool) -> bool: 
             """ True if max_tries exceeded or terminal"""
             return bool(step > max_tries or terminated)
+        # NOTE - these should be just blank fsl prompts
+        question_prompt = copy.deepcopy(question_prompt)
+        answer_prompt = copy.deepcopy(answer_prompt) # has to be answer prompt
         
         child_idx: int = random.sample(range(len(path[-1].children)), 1)[0]
         node_to_sim: MCTSNode = path[-1].children[child_idx] # for now, just first node added
         state: GSMLlamaPromptTemplate = copy.deepcopy(node_to_sim.state)
         
-        question_prompt = copy.deepcopy(state)
-        answer_prompt = copy.deepcopy(state) # has to be answer prompt
-        breakpoint()
+        question_prompt.copy_history(state)
+        answer_prompt.copy_history(state)
+
         step = 0
         terminated = False
         rewards = []
         while not episode_stop_condition(step, terminated):
-            sub_question = actor.act(state)
+            sub_question = actor.act(question_prompt)
             question_prompt.add(**{'role': 'assistant', 'content': sub_question})
             answer_prompt.add(**{'role': 'user', 'content': sub_question})
-            breakpoint()
+            
             sub_answer, log_prob = world_model.step_logprobs(answer_prompt).values()
             question_prompt.add('user', sub_answer)
             answer_prompt.add('assistant', sub_answer)
-            breakpoint()
-            # NOTE: finish out evaluation for big reward
+            # NOTE: if correct, give big reward
             rewards.append(np.mean(log_prob))
             if filter_output_type(sub_answer)=='final_answer': 
                 out = gsm_is_correct(0, sub_answer, sample)
                 if out: 
                     rewards.append(win_reward)
                 terminated = True
-                breakpoint()
-                
+            step+=1
+        # NOTE - actually maybe not problem; suppose you go off the rails and it is stored. that path is never taken anyways.
+        # TODO: what happens if you just get stuck in a loop? - you cant backpropagate
+        # if step > max_tries: 
+        #     return False # flag for skipping backprop
+        # idea return flag, if flag then skip backpropagation and then move to next
+        breakpoint()
         rollout_reward = sum(rewards)
         node = path[-1].children[child_idx]
         node.reward = rollout_reward
         path.append(node)
+        
+        # return True
+        
+    def back_propagate(self, path: list[MCTSNode]) -> float:
+        """ 
+        Updates each node in the path with the cumulative rewards from rollout and returns the updated path and the cum_reward for the root 
+        
+        ex. leaf node gets rollout reward 
+        leaf node - 1 gets rollout reward + own reward 
+        leaf node - 2 gets rollout reward + leaf node -1 + own reward 
+        ...
+        
+        :param path - list[MCTSNode]: list of nodes corresponding to search path 
+        :param child_idx - int: Inside the leaf node, the idx of its expanded child node we simulated
+        """
+        cum_reward_func: Callable[[list[float]], float] = self.cum_reward # way to calculate the cumulative reward from each step. Defaults: sum
+        rewards = [] # holds rewards for each node
+        cum_reward = -math.inf
+        for node in reversed(path): # leaf --> root
+            rewards.append(node.reward) # ex. leaf: rewards = [100]; leaf-1: rewards = [100, 10]; leaf-2: rewards = [100, 10, 15], ...
+            # NOTE: work-around for node.reward = None => we filter this out 
+            rewards = list(filter(lambda x: x != None, rewards))
+            cum_reward = cum_reward_func(rewards[::-1]) # self.cum_rewards callable sum; ex. sum([10, 100]), sum([15, 10, 100])
+            node.cum_rewards.append(cum_reward) # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
 
+        return cum_reward
 
 if __name__ == "__main__":
     from agents.reasoners.wm_reasoner import Actor, WorldModel
@@ -248,13 +280,18 @@ if __name__ == "__main__":
     actor = Actor(generator)
     world_model = WorldModel(generator)
     
-
+    dummy_question_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
+        'question', 1, 'question')
+    dummy_answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
+        'answer', 1, 'answer')
+    
     path = mcts.select(root) # select a path from root node down to leaf node or not that is not fully expanded
 
-    if not mcts._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
-        mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5) # expand on last node --> make all of the children 
-        breakpoint()
-        mcts.simulate_node(path, actor, world_model, question_prompt, answer_prompt, 10, samples[0]) # simulate the path
-
-
+    for i in range(5): 
+        if not mcts._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
+            mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5) # expand on last node --> make all of the children 
+            simulated = mcts.simulate_node(path, actor, world_model, 10, samples[0], dummy_question_prompt, dummy_answer_prompt) # simulate the path
+            if simulated: # only updated if successfully rolled out
+                cum_reward = mcts.back_propagate(path)
+    
     breakpoint()

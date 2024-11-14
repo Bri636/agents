@@ -160,7 +160,6 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         """
         if not isinstance(prompt, GSMLlamaPromptTemplate):
             raise TypeError("Prompt must be an instance of GSMLlamaPromptTemplate.")
-        breakpoint()
         # Determine if we need to swap roles by checking if the prompt types are different
         if self._fsl_prompt_type != prompt._fsl_prompt_type:
             # Swap roles in the copied history if prompt types are opposite
@@ -172,10 +171,10 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         else:
             # Directly copy the history if no swapping is needed
             modified_history = copy.deepcopy(prompt._history)
-        
         # Update self._history and append to self.fsl_prompt
         self._history = modified_history
         self.fsl_prompt.extend(modified_history)
+        
 
 if __name__ == "__main__": 
     

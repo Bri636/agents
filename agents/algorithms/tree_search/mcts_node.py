@@ -24,7 +24,7 @@ from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, Sea
                                                 State, Action, Example, Trace)
 from agents.utils import calculate_returns
 from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
-
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 import gymnasium as gym 
 import ale_py
 
@@ -70,7 +70,7 @@ class MCTSNode(Generic[State, Action, Example]):
         self.cum_rewards: list[float] = [] # rewards from rollout
         self.is_terminal = is_terminal
         self.action = action
-        self.state = state
+        self.state: GSMLlamaPromptTemplate | Any = state
         self.reward = reward
         self.parent = parent
         self.children: 'Optional[list[MCTSNode]]' = []
@@ -104,7 +104,7 @@ class MCTSNode(Generic[State, Action, Example]):
         table.add_column("Attribute", style="dim")
         table.add_column("Value")
         
-        table.add_row("State", str(self.state))
+        table.add_row("State", str(self.state.history))
         table.add_row("Action", str(self.action))
         table.add_row("Parent ID", str(self.parent.id if self.parent else "None"))
         table.add_row("Q-Value", f"{self.Q:.2f}")
@@ -117,7 +117,7 @@ class MCTSNode(Generic[State, Action, Example]):
         # Concise representation for __repr__
         return dedent(f"""
     MCTSNode(id={self.id}, 
-    state=dim:{self.state}, 
+    state=dim:{self.state.history}, 
     action={self.action}, 
     Q={self.Q:.2f}, 
     reward={self.reward}, 
