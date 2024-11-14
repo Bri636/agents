@@ -123,6 +123,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             path.append(node)
             if self._is_terminal_with_depth_limit(node) or len(node.children) == 0:
                 return path  # NOTE: return if ...
+            breakpoint()
             best_child = self._uct_select(node)
             node = best_child  # set node as best child
 
@@ -132,7 +133,10 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                world_model: WorldModel,
                question_prompt: GSMLlamaPromptTemplate,
                answer_prompt: GSMLlamaPromptTemplate,
-               num_children: int
+               num_children: int, 
+               sample: dict,
+               win_reward: int = 50, 
+               lose_reward: int = -10
                ) -> None:
         """ Expands last node of path into d children and updates the nodes internal children attribute """
         question_prompt = copy.deepcopy(question_prompt)
@@ -149,14 +153,30 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
 
         children = []
         for sub_question in sub_questions:
+        
             answer_prompt.add(**{'role': 'user', 'content': sub_question})
             sub_answer, log_prob = world_model.step_logprobs(answer_prompt).values()
             question_prompt.add(
                 **{'role': 'assistant', 'content': sub_question})
             question_prompt.add(**{'role': 'user', 'content': sub_answer})
+
+            if filter_output_type(sub_answer)=='final_answer': 
+                terminated = True
+                out = gsm_is_correct(0, sub_answer, sample)
+                if out: 
+                    reward = win_reward
+                else: 
+                    reward = lose_reward
+            else: 
+                reward = np.mean(log_prob)
+                terminated = False # set as not done 
+            
             child_node = MCTSNode(state=copy.deepcopy(question_prompt),
                                   action=sub_question,
-                                  reward=np.mean(log_prob)
+                                  reward=reward, 
+                                  parent=node, 
+                                  is_terminal=terminated,
+                                  calc_q=self.calc_q
                                   )
             answer_prompt.pop()
             question_prompt.pop([-1, -2])
@@ -172,7 +192,8 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                       sample: dict, 
                       question_prompt: GSMLlamaPromptTemplate, 
                       answer_prompt: GSMLlamaPromptTemplate,
-                      win_reward: float = 50
+                      win_reward: float = 50, 
+                      lose_reward: float = -10
                       ) -> bool: 
         """ Simulates a single node until end of problem """
         def episode_stop_condition(step: int, terminated: bool) -> bool: 
@@ -206,20 +227,21 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 out = gsm_is_correct(0, sub_answer, sample)
                 if out: 
                     rewards.append(win_reward)
+                else: 
+                    rewards.append(lose_reward)
                 terminated = True
             step+=1
         # NOTE - actually maybe not problem; suppose you go off the rails and it is stored. that path is never taken anyways.
         # TODO: what happens if you just get stuck in a loop? - you cant backpropagate
-        # if step > max_tries: 
-        #     return False # flag for skipping backprop
+        if step > max_tries: 
+            return False # flag for skipping backprop; assumption - parsing error
         # idea return flag, if flag then skip backpropagation and then move to next
-        breakpoint()
         rollout_reward = sum(rewards)
         node = path[-1].children[child_idx]
         node.reward = rollout_reward
         path.append(node)
         
-        # return True
+        return True
         
     def back_propagate(self, path: list[MCTSNode]) -> float:
         """ 
@@ -244,6 +266,22 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             node.cum_rewards.append(cum_reward) # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
 
         return cum_reward
+    
+    def display_path(self, path: list[MCTSNode]) -> None:
+        console = Console()
+        tree = Tree(f"[bold green]MCTS Path - Depth: {len(path)}[/]")
+        for node in path:
+            children = node.children if node.children else "None"
+            node_info = f"""
+            \n<<< Node ID: {node.id} | 
+            State: {node.state.history} | 
+            Action: {node.action} | 
+            Q-Value: {node.Q:.2f} | 
+            Parent: {node.parent} | 
+            Children: {children} >>>\n
+            """
+            tree.add(node_info)
+        console.print(tree)
 
 if __name__ == "__main__":
     from agents.reasoners.wm_reasoner import Actor, WorldModel
@@ -285,11 +323,12 @@ if __name__ == "__main__":
     dummy_answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
         'answer', 1, 'answer')
     
-    path = mcts.select(root) # select a path from root node down to leaf node or not that is not fully expanded
-
     for i in range(5): 
+        breakpoint()
+        path = mcts.select(root) # select a path from root node down to leaf node or not that is not fully expanded
         if not mcts._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
-            mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5) # expand on last node --> make all of the children 
+            mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5, samples[0]) # expand on last node --> make all of the children 
+            breakpoint()
             simulated = mcts.simulate_node(path, actor, world_model, 10, samples[0], dummy_question_prompt, dummy_answer_prompt) # simulate the path
             if simulated: # only updated if successfully rolled out
                 cum_reward = mcts.back_propagate(path)
