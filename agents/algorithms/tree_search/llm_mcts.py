@@ -34,6 +34,7 @@ from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
 class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
     def __init__(self,
+                 root: MCTS,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
                  depth_limit: int = 5,
@@ -74,6 +75,9 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         }
         self.simulate_choice: Callable[[list[float]], int] = default_simulate_strategies.get(simulate_strategy,
                                                                                              simulate_strategy)
+        
+        self.root: MCTSNode = root
+        
         # self.world_model = None
         # self.search_config = None
         self.output_trace_in_each_iter = output_trace_in_each_iter
@@ -89,7 +93,6 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         self._output_iter: list[MCTSNode] = None
         self._output_cum_reward = -math.inf
         self.trace_in_each_iter: list[list[MCTSNode]] = None
-        self.root: Optional[MCTSNode] = None
         self.disable_tqdm = disable_tqdm
         self.node_visualizer = node_visualizer
 
@@ -123,7 +126,6 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             path.append(node)
             if self._is_terminal_with_depth_limit(node) or len(node.children) == 0:
                 return path  # NOTE: return if ...
-            breakpoint()
             best_child = self._uct_select(node)
             node = best_child  # set node as best child
 
@@ -267,21 +269,88 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
 
         return cum_reward
     
-    def display_path(self, path: list[MCTSNode]) -> None:
+    def _dfs_max_reward(self, path: list[MCTSNode]) -> tuple[float, list[MCTSNode]]:
+        cur = path[-1]
+        if not cur.children:
+            # Leaf node (no children)
+            cumulative_reward = self.cum_reward([node.reward for node in path[1:]])
+            return cumulative_reward, path
+        else:
+            max_reward = -math.inf
+            best_path = path
+            for child in cur.children:
+                reward, child_path = self._dfs_max_reward(path + [child])
+                if reward > max_reward:
+                    max_reward = reward
+                    best_path = child_path
+            return max_reward, best_path
+    
+    def display_mcts_tree_with_optimal_path(self):
         console = Console()
-        tree = Tree(f"[bold green]MCTS Path - Depth: {len(path)}[/]")
-        for node in path:
-            children = node.children if node.children else "None"
-            node_info = f"""
-            \n<<< Node ID: {node.id} | 
-            State: {node.state.history} | 
-            Action: {node.action} | 
-            Q-Value: {node.Q:.2f} | 
-            Parent: {node.parent} | 
-            Children: {children} >>>\n
-            """
-            tree.add(node_info)
-        console.print(tree)
+        if self.root is None:
+            print("The MCTS tree is empty. Please run the MCTS algorithm first.")
+            return
+        # Get the optimal path
+        max_reward, optimal_path = self._dfs_max_reward([self.root])
+        # Get the set of node IDs in the optimal path
+        optimal_node_ids = set(node.id for node in optimal_path)
+        # Build the tree, passing in the optimal_node_ids
+        rich_tree = self.build_tree(self.root, optimal_node_ids)
+        console.print(rich_tree)
+        print(f"Maximum Cumulative Reward: {max_reward}")
+
+    def build_tree(self, node, optimal_node_ids=None):
+        # Handle the case where node is None
+        if node is None:
+            return Tree("[bold red]None[/bold red]")
+        
+        # Get parent ID, handle None
+        parent_id = node.parent.id if node.parent else None
+
+        # Get children IDs, handle empty list or None
+        if node.children:
+            children_ids = [child.id for child in node.children]
+        else:
+            children_ids = []
+
+        # Safely format Q-value and reward, handling None
+        node_Q = f"{node.Q:.2f}" if node.Q is not None else "None"
+        node_reward = f"{node.reward:.2f}" if node.reward is not None else "None"
+
+        # Check if node is in the optimal path
+        in_optimal_path = optimal_node_ids and node.id in optimal_node_ids
+
+        # Customize the node information with colors
+        if in_optimal_path:
+            # Color the node info red if it's in the optimal path
+            node_info = (
+                f"[bold red]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold red]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold red]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold red]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold red]Terminal:[/] [red]{node.is_terminal}[/] | "
+                f"[bold red]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+        else:
+            node_info = (
+                f"[bold cyan]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold cyan]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold cyan]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold cyan]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold cyan]Terminal:[/] [red]{node.is_terminal}[/] | "
+                f"[bold cyan]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+
+        # Create the tree node with the colored node_info
+        rich_tree = Tree(node_info)
+
+        # Recurse for each child
+        if node.children:
+            for child in node.children:
+                child_tree = self.build_tree(child, optimal_node_ids)
+                rich_tree.add(child_tree)
+
+        return rich_tree
 
 if __name__ == "__main__":
     from agents.reasoners.wm_reasoner import Actor, WorldModel
@@ -300,8 +369,6 @@ if __name__ == "__main__":
     answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
         'answer', 1, 'answer')
 
-    mcts = MCTS()
-
     question = samples[0]['question']
     question_prompt.add('user', content=question)
     answer_prompt.add('user', content=question)
@@ -312,6 +379,8 @@ if __name__ == "__main__":
                     parent=None,
                     is_terminal=False
                     )
+    
+    mcts = MCTS(root=root)
 
     generator_cfg = VLLMGeneratorConfig(temperature=0.9)
     generator = VLLMGenerator(generator_cfg)
@@ -323,14 +392,14 @@ if __name__ == "__main__":
     dummy_answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
         'answer', 1, 'answer')
     
-    for i in range(5): 
-        breakpoint()
-        path = mcts.select(root) # select a path from root node down to leaf node or not that is not fully expanded
+    for i in range(15): 
+        path = mcts.select(mcts.root) # select a path from root node down to leaf node or not that is not fully expanded
         if not mcts._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
-            mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 5, samples[0]) # expand on last node --> make all of the children 
-            breakpoint()
+            mcts.expand(path[-1], actor, world_model, question_prompt, answer_prompt, 3, samples[0]) # expand on last node --> make all of the children 
             simulated = mcts.simulate_node(path, actor, world_model, 10, samples[0], dummy_question_prompt, dummy_answer_prompt) # simulate the path
             if simulated: # only updated if successfully rolled out
                 cum_reward = mcts.back_propagate(path)
+                
+    mcts.display_mcts_tree_with_optimal_path()
     
     breakpoint()
