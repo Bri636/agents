@@ -27,6 +27,8 @@ from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 import gymnasium as gym 
 import ale_py
+from rich.pretty import pprint as rpprint
+import pprint as pp
 
 class MCTSNode(Generic[State, Action, Example]):
     
@@ -113,13 +115,42 @@ class MCTSNode(Generic[State, Action, Example]):
         console.print(table)
         return console.file.getvalue()
 
+    # def __repr__(self) -> str:
+    #     # Concise representation for __repr__
+    #     return rpprint(f"""
+    # MCTSNode(id={self.id}, 
+    # state=dim:{self.state.history}, 
+    # action={self.action}, 
+    # Q={self.Q:.2f}, 
+    # reward={self.reward}, 
+    # num_children={len(self.children)})
+    # """)
+    
     def __repr__(self) -> str:
-        # Concise representation for __repr__
-        return dedent(f"""
-    MCTSNode(id={self.id}, 
-    state=dim:{self.state.history}, 
-    action={self.action}, 
-    Q={self.Q:.2f}, 
-    reward={self.reward}, 
-    num_children={len(self.children)})
-    """)
+        # Create a StringIO buffer to capture Rich output
+        buffer = StringIO()
+        console = Console(file=buffer, width=80, force_terminal=True)
+        
+        # Build a Rich Table or any other Rich component
+        table = Table(title=f"Node ID: {self.id}", show_header=False, box=None)
+        
+        # Add rows to the table
+        table.add_row("[bold]Parent ID:[/]", str(self.parent.id if self.parent else "None"))
+        table.add_row("[bold]Action:[/]", str(self.action))
+        table.add_row("[bold]Q-Value:[/]", f"{self.Q:.2f}")
+        table.add_row("[bold]Reward:[/]", str(self.reward))
+        table.add_row("[bold]Is Terminal:[/]", str(self.is_terminal))
+        table.add_row("[bold]Depth:[/]", str(self.depth))
+        table.add_row("[bold]Num Children:[/]", str(len(self.children)))
+        # If state is complex, you might summarize it
+        state_length = len(self.state.history) if self.state and hasattr(self.state, 'history') else "None"
+        table.add_row("[bold]State Length:[/]", str(state_length))
+
+        # Render the table to the console (which writes to the buffer)
+        console.print(table)
+
+        # Get the string from the buffer
+        rich_output = buffer.getvalue()
+
+        # Return the string
+        return rich_output
