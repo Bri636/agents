@@ -64,6 +64,7 @@ class VLLMGenerator(BaseLLMGenerator):
         """
         from vllm import LLM
         from vllm import SamplingParams
+        from transformers import AutoTokenizer
 
         # Create the sampling params to use
         sampling_kwargs = {}
@@ -90,6 +91,33 @@ class VLLMGenerator(BaseLLMGenerator):
 
         # inference  attr
         self.use_tqdm = config.use_tqdm
+        self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name)
+        self.max_tokens = self.tokenizer.model_max_length
+        
+    def prompt_exceeds_limit(self, prompts: dict[str, str] | list[dict[str, str]]) -> bool:
+        """Counts the number of tokens in a prompt. If exceeds return True, else False.
+        Note that the prompt is a list[dict[str, str]] or dict[str, str] that corresponds to the 
+        openai chat format ie
+        [
+            {'role': ..., 
+            'content': ...}, 
+            ...  
+        ]
+        """
+        # Ensure that the prompts are in a list
+        if isinstance(prompts, dict):
+            prompts = [prompts]
+        # Concatenate messages into a text string
+        text = ''
+        for message in prompts:
+            role = message.get('role', '')
+            content = message.get('content', '')
+            text += f"{role}:\n{content}\n"
+        input_ids = self.tokenizer.encode(text)
+        num_tokens = len(input_ids)
+        max_context_length = self.tokenizer.model_max_length
+        
+        return bool(num_tokens > max_context_length)
 
     def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
         """Generate response text from prompts.
@@ -149,7 +177,7 @@ class VLLMGenerator(BaseLLMGenerator):
 
         outputs = self.llm.chat(messages=prompts,
                                 sampling_params=self.sampling_params,
-                                use_tqdm=True)
+                                use_tqdm=self.use_tqdm)
         responses: list[str] = [output.outputs[0].text
                                 for output in outputs]
         log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs for output in outputs][0]

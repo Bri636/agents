@@ -10,9 +10,7 @@ from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
 class WorldModel: 
-    def __init__(self, 
-                 generator: BaseLLMGenerator, 
-                 ) -> None:
+    def __init__(self, generator: BaseLLMGenerator) -> None:
         
         self.generator = generator
 
@@ -44,6 +42,9 @@ class WorldModel:
     def reset(self): 
         """ Resets the environment to its original state"""
         ...
+        
+    def prompt_exceeds_limit(self, prompts: BasePromptTemplate): 
+        return self.generator.prompt_exceeds_limit(prompts.preprocess())
     
 class Actor: 
     def __init__(self, 
@@ -68,6 +69,9 @@ class Actor:
                 'token_seq': sub_question['token_seq'],
                 'log_probs': sub_question['log_probs'],
                 }
+         
+    def prompt_exceeds_limit(self, prompts: BasePromptTemplate): 
+        return self.generator.prompt_exceeds_limit(prompts.preprocess())
         
         
 class WorldReasoner(BaseReasoner): 
