@@ -2,7 +2,7 @@ import json
 import re
 import os
 import random
-from typing import Literal
+from typing import Literal, Tuple
 
 """
 Format: 
@@ -67,14 +67,13 @@ def gsm_is_correct(model_completion: str, gt_example: dict[str, str]) -> bool:
     assert gt_answer != INVALID_ANS
     return gsm_extract_answer(model_completion) == gt_answer
 
-def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str], verbose: bool = True) -> bool:
+def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str]) -> Tuple[bool, str]:
     """ Checks if final model's output matches the gold answer """ 
-    
     answer = float(gsm_extract_answer(answer))
     gold_answer = float(gsm_extract_answer(gold_answer["answer"]))
-    if verbose: 
-        print(f'Question {idx +1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n\n')
-    return bool(answer == gold_answer)
+    
+    return (bool(answer == gold_answer), 
+            f'Question {idx + 1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n')
 
 # mine 
 def batch_sample_gsm(dataset: list[dict[str, str]], batch_size: int) -> list[dict[str, str]]: 

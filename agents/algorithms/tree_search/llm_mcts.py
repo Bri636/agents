@@ -32,7 +32,6 @@ from agents.reasoners.wm_reasoner import WorldModel, Actor
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
-
 class MCTSResult(NamedTuple):
     """ Simple Container Class for MCTS Output """
 
@@ -44,7 +43,6 @@ class MCTSResult(NamedTuple):
     trace_in_each_iter: list[list[MCTSNode]] = None
     tree_state_after_each_iter: list[MCTSNode] = None
     aggregated_result: Optional[Hashable] = None
-
 
 class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
     def __init__(self,
@@ -168,7 +166,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
 
         # # NOTE: THIS MUST BE LOG PROBS FOR ANSWER
         # log_probs = [sub_question['log_probs'] for sub_question in sub_questions_pkg]
-        breakpoint()
+
         children = []
         for sub_question in sub_questions:
 
