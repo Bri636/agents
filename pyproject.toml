@@ -45,7 +45,7 @@ dependencies = [
     "autogen", 
     "vllm", 
     "ollama", 
-    "ale-py"
+    "ale-py", 
 ]
 
 [project.urls]

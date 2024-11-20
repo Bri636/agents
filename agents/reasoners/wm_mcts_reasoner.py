@@ -9,66 +9,124 @@ from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
-class WorldModel: 
+from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
+from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+
+
+class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
-        
+
         self.generator = generator
 
-    def step(self, answer_prompt: BasePromptTemplate) -> str: 
+    def step(self, answer_prompt: BasePromptTemplate) -> str:
         """ Generates the next state given the current action or state """
         sub_answer = self.generator.generate(answer_prompt.preprocess())[0]
-        
+
         return sub_answer
-    
-    def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict: 
+
+    def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
         """
-        sub_answer = self.generator.generate_with_logprobs(answer_prompt.preprocess())
+        sub_answer = self.generator.generate_with_logprobs(
+            answer_prompt.preprocess())
         return {'text': sub_answer['text'][0],
                 'log_probs': sub_answer['log_probs'],
                 }
-        
-    def is_terminal(self): 
+
+    def is_terminal(self):
         ...
-        
-    def _generate_reward(self): 
+
+    def _generate_reward(self):
         """ Generates the reward for an action """
-        
-    def _generate_next_state(self): 
+
+    def _generate_next_state(self):
         """ Generates the next state in the environment for an action """
-        
-    def reset(self): 
+
+    def reset(self):
         """ Resets the environment to its original state"""
         ...
-        
-    def prompt_exceeds_limit(self, prompts: BasePromptTemplate): 
+
+    def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
-    
-class Actor: 
-    def __init__(self, 
-                 generator: BaseLLMGenerator, 
+
+
+class Actor:
+    def __init__(self,
+                 generator: BaseLLMGenerator,
                  ) -> None:
-        
+
         self.generator = generator
-    
-    def act(self, question_prompt: BasePromptTemplate) -> str: 
+
+    def act(self, question_prompt: BasePromptTemplate) -> str:
         """ Returns the next sub_question to ask"""
         sub_question = self.generator.generate(question_prompt.preprocess())[0]
-        
+
         return sub_question
-    
-    def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict: 
+
+    def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
         """
-        sub_question = self.generator.generate_with_logprobs(question_prompt.preprocess())
+        sub_question = self.generator.generate_with_logprobs(
+            question_prompt.preprocess())
         return {'text': sub_question['text'][0],
                 'token_seq': sub_question['token_seq'],
                 'log_probs': sub_question['log_probs'],
                 }
-         
-    def prompt_exceeds_limit(self, prompts: BasePromptTemplate): 
+
+    def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
+
+class MCTSWorldReasoner(BaseReasoner):
+
+    def __init__(self,
+                 generator: BaseLLMGenerator,
+                 answer_prompt: BasePromptTemplate,
+                 question_prompt: BasePromptTemplate,
+                 llm_output_filter: filter_output_type,
+                 **kwargs
+                 ) -> None:
+
+        self.actor = Actor(generator)
+        self.world_model = WorldModel(generator)
+        self.answer_prompt = answer_prompt
+        self.question_prompt = question_prompt
+        self.llm_output_filter = llm_output_filter
+
+    def generate_answer(self, idx: int, sample: dict[str, str], num_tries: int, num_children: int = 3) -> Tuple[bool, bool | None]:
+
+        question = sample['question']
+        self.question_prompt.add('user', content=question)
+        self.answer_prompt.add('user', content=question)
+
+        root = BTMCTSNode(state=self.question_prompt,  # state is original question
+                          action=None,
+                          reward=None,
+                          parent=None,
+                          is_terminal=False
+                          )
+
+        mcts = MCTS(question_prompt=self.question_prompt,
+                    answer_prompt=self.answer_prompt,
+                    )
+
+        try:
+            answer, optimal_path = mcts.guess_answer(root=root,
+                                                     actor=self.actor,
+                                                     world_model=self.world_model,
+                                                     sample=sample,
+                                                     sample_idx=idx,
+                                                     max_tries=num_tries,
+                                                     num_children=num_children
+                                                     )
+
+            if self.llm_output_filter(answer) == 'final_answer':
+                out, message = gsm_is_correct(idx, answer, sample)
+                return True, out
+
+        except Exception as e:
+            breakpoint()
+            return False, None

@@ -7,6 +7,8 @@ from enum import Enum
 from vllm.sequence import Logprob
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
+import torch
+import numpy as np
 
 
 class ModelType(Enum):
@@ -93,7 +95,7 @@ class VLLMGenerator(BaseLLMGenerator):
         self.use_tqdm = config.use_tqdm
         self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name)
         self.max_tokens = self.tokenizer.model_max_length
-        
+
     def prompt_exceeds_limit(self, prompts: dict[str, str] | list[dict[str, str]]) -> bool:
         """Counts the number of tokens in a prompt. If exceeds return True, else False.
         Note that the prompt is a list[dict[str, str]] or dict[str, str] that corresponds to the 
@@ -116,7 +118,7 @@ class VLLMGenerator(BaseLLMGenerator):
         input_ids = self.tokenizer.encode(text)
         num_tokens = len(input_ids)
         max_context_length = self.tokenizer.model_max_length
-        
+
         return bool(num_tokens > max_context_length)
 
     def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
@@ -180,7 +182,8 @@ class VLLMGenerator(BaseLLMGenerator):
                                 use_tqdm=self.use_tqdm)
         responses: list[str] = [output.outputs[0].text
                                 for output in outputs]
-        log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs for output in outputs][0]
+        log_probs: list[dict[int, Logprob]] = [
+            output.outputs[0].logprobs for output in outputs][0]
         token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
         return {'text': responses,
                 'token_seq': token_seq,
@@ -193,7 +196,8 @@ class VLLMGenerator(BaseLLMGenerator):
         token_seq = []
         log_prob_seq = []
         for log_prob_dict in log_probs:
-            log_prob_obj: Logprob = next(iter(log_prob_dict.values())) # extract logprobs object
+            log_prob_obj: Logprob = next(
+                iter(log_prob_dict.values()))  # extract logprobs object
             log_prob, token = log_prob_obj.logprob, log_prob_obj.decoded_token
             token_seq.append(token)
             log_prob_seq.append(log_prob)
@@ -202,16 +206,31 @@ class VLLMGenerator(BaseLLMGenerator):
             'tokens': token_seq,
             'log_probs': log_prob_seq
         }
-        
-if __name__=="__main__": 
-    
+
+    def embed(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
+
+        if isinstance(prompts, dict):
+            prompts = [prompts]
+
+        outputs = self.llm.encode(prompts=prompts,
+                                #   sampling_params=self.sampling_params,
+                                  use_tqdm=self.use_tqdm)
+        breakpoint()
+        embeddings: list[float | torch.Tensor, np.ndarray] = [output.outputs[0].embedding
+                                                              for output in outputs]
+        breakpoint()
+        return embeddings
+
+
+if __name__ == "__main__":
+
     from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
     # from agents.prompts.gsm_llama_prompts ...
-    
+
     data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
     batch_size = 16
-    
+
     dataset = read_jsonl(data_path)
     samples = batch_sample_gsm(dataset, batch_size)
-    
+
     breakpoint()

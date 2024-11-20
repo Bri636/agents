@@ -9,23 +9,31 @@ from rich.console import Console
 from rich.table import Table
 from io import StringIO
 import numpy as np
-from tqdm import trange
+from tqdm.rich import trange, tqdm
 import random
 from textwrap import dedent
 from rich.tree import Tree
-from tqdm import tqdm
 import math
 import logging
-from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig,
-                                                State, Action, Example, Trace)
+from agents.mcts.base import (SearchAlgorithm, WorldModel, SearchConfig,
+                              State, Action, Example, Trace)
 from agents.utils import calculate_returns
 # from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
-from agents.algorithms.tree_search.bigtree_mcts_node import BTMCTSNode
+from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.reasoners.wm_reasoner import WorldModel, Actor
 
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+from agents.mcts.bigtree.mcts_utils import SearchStrategies
+# from agents.utils import configure_logger
+
+
+def win_lose(win: bool,
+             win_reward: float = 100,
+             lose_reward: float = -50
+             ) -> float:
+    return win_reward if win else lose_reward
 
 
 class MCTSResult(NamedTuple):
@@ -38,13 +46,6 @@ class MCTSResult(NamedTuple):
     trace_in_each_iter: list[list[BTMCTSNode]] = None
     tree_state_after_each_iter: list[BTMCTSNode] = None
     aggregated_result: Optional[Hashable] = None
-
-
-def win_lose(win: bool,
-             win_reward: float = 100,
-             lose_reward: float = -50
-             ) -> float:
-    return win_reward if win else lose_reward
 
 
 class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
@@ -111,7 +112,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         self.output_strategy = output_strategy
         self._output_iter: list[BTMCTSNode] = None
         self._output_cum_reward = -math.inf
-        self.trace_in_each_iter: list[list[BTMCTSNode]] = None
+        self.trace_in_each_iter = []
         self.use_tqdm: bool = use_tqdm
         self.node_visualizer = node_visualizer
         self.terminal_reward_strategy, self.reward_strategy = reward_strategies.get(
@@ -175,7 +176,8 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                world_model: WorldModel,
                num_children: int,
                sample: dict,
-               sample_idx: int
+               sample_idx: int, 
+               verbose: bool = False
                ) -> None:
         """ Expands last node of path into d children and updates the nodes internal children attribute """
         # copy prompt history from node state
@@ -199,9 +201,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
 
             if filter_output_type(sub_answer) == 'final_answer':
                 out, message = gsm_is_correct(sample_idx, sub_answer, sample)
-                if self.logger:
-                    self.logger.info(message)
-                else:
+                if verbose:
                     print(message)
                 reward: float | int = self.terminal_reward_strategy(out)
                 terminated = True
@@ -209,7 +209,9 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 reward = self.reward_strategy(
                     log_prob)  # get log_prob as reward
                 terminated = False  # set as not done
-
+            # breakpoint()
+            # embeddings = actor.generator.embed(sub_answer)
+            # breakpoint()
             child_node = BTMCTSNode(state=copy.deepcopy(self._question_prompt_base),
                                     action=sub_question,
                                     reward=reward,
@@ -231,7 +233,8 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                       world_model: WorldModel,
                       max_tries: int,
                       sample: dict,
-                      sample_idx: int
+                      sample_idx: int, 
+                      verbose: bool = False
                       ) -> bool:
         """ Simulates a single node until end of problem and returns a flag if successfully simulated or not """
         # randomly simulate child
@@ -264,27 +267,20 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 out, message = gsm_is_correct(sample_idx, sub_answer, sample)
                 rollout_rewards.append(self.terminal_reward_strategy(out))
                 terminated = True
-                if self.logger:
-                    self.logger.info(message)
-                else:
+                if verbose:
                     print(message)
-                    
-            # def exceeds_prompt_limit(prompts: tuple[Union[BasePromptTemplate, GSMLlamaPromptTemplate]]) -> bool: 
-            #     return any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip((actor, world_model), ))
 
-            # def exceeds_prompt_limit(agents: tuple, prompts: tuple) -> bool:
-            #     """Check if any agent exceeds the prompt limit for the corresponding prompt."""
-            #     return any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts))
-            # test for if any of the prompts exceed input token limit before next round
-            exceeds_limit: bool = any([agent.prompt_exceeds_limit(prompt)
-                                       for agent, prompt in zip(
-                (actor, world_model),
-                (self._question_prompt_base,
-                 self._answer_prompt_base)
-            )
-            ])
+            def exceeds_prompt_limit(agents: tuple = (actor,
+                                                      world_model),
+                                     prompts: tuple = (self._question_prompt_base,
+                                                       self._answer_prompt_base)
+                                     ) -> bool:
+                """Check if any agent exceeds the prompt limit for the corresponding prompt."""
+                return any(agent.prompt_exceeds_limit(prompt)
+                           for agent, prompt in zip(agents, prompts))
+
             step += 1
-            if step > max_tries or exceeds_limit:
+            if step > max_tries or bool(exceeds_prompt_limit()):
                 return False  # flag for skipping backprop; assumption - parsing error
         # reset prompts to base again
         self._question_prompt_base.reset()
@@ -321,52 +317,202 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             node.cum_rewards.append(cum_reward)
 
         return cum_reward
-
-    def iterate(self,
-                node: BTMCTSNode,
-                actor: Actor,
-                world_model: WorldModel,
-                num_children: int,
-                sample: dict,
-                sample_idx: int,
-                max_tries: int
-                ) -> Union[None, list[BTMCTSNode]]:
-        """ Runs one single iteration of MCTS on input node using actor - world model strategy """
+    
+    def iterate(
+        self,
+        node: BTMCTSNode,
+        actor: Actor,
+        world_model: WorldModel,
+        num_children: int,
+        sample: dict,
+        sample_idx: int,
+        max_tries: int
+    ) -> Optional[list[BTMCTSNode]]:
+        """Runs one iteration of MCTS on the input node using the actor-world model strategy."""
         path = self.select(node)
-        # cum_reward = path[-1].cum_rewards
-        # if leaf is not terminal or exceeds depth
-        if not self._is_terminal_with_depth_limit(path[-1]):
-            self.expand(path[-1], actor, world_model,
-                        num_children, sample, sample_idx)
-            simulated = self.simulate_node(
-                path, actor, world_model, max_tries, sample, sample_idx)  # simulate the path
-        else:
-            simulated = False  # if terminal or depth limit, dont simulate
-
-        if simulated:
-            # if everything fine, backprop
+        # Check if the selected node is terminal or the depth limit is reached
+        if self._is_terminal_with_depth_limit(path[-1]):
             cum_reward = self.back_propagate(path)
-            # set attr to cumulative reward
+        else:
+            self.expand(path[-1], actor, world_model, num_children, sample, sample_idx)
+            success = self.simulate_node(
+                path, actor, world_model, max_tries, sample, sample_idx
+            )
+            if success:
+                cum_reward = self.back_propagate(path)
+            else:
+                return None
+        # Update the output based on the specified strategy
+        if self.output_strategy == 'max_iter' \
+            and path[-1].is_terminal \
+            and cum_reward > self._output_cum_reward:
             self._output_cum_reward = cum_reward
-            # if last node is terminal and finds the path with the best cum_reward
-            if self.output_strategy == 'max_iter' \
-                    and path[-1].is_terminal \
-                    and cum_reward > self._output_cum_reward:
-                self._output_iter = path
-            # only returns the last iteration
-            elif self.output_strategy == 'last_iter':
-                self._output_iter = path
-            # only returns the last iteration where the leaf node is terminal
-            elif self.output_strategy == 'last_terminal_iter' \
-                    and path[-1].is_terminal:
-                self._output_iter = path
+            self._output_iter = path
+        elif self.output_strategy == 'last_iter':
+            self._output_cum_reward = cum_reward
+            self._output_iter = path
+        elif self.output_strategy == 'last_terminal_iter' and path[-1].is_terminal:
+            self._output_cum_reward = cum_reward
+            self._output_iter = path
 
-            return path
+        return path
 
-        return None
+    def search(self,
+               root: BTMCTSNode,
+               actor: Actor,
+               world_model: WorldModel,
+               num_children: int,
+               sample: dict,
+               sample_idx: int,
+               max_tries: int
+               ) -> Tuple[list[BTMCTSNode], float]:
+        """ Search for the optimal path based on strategy """
+        # run mcts for n times and store each explored path
+        for _ in trange(self.num_iters, disable=self.use_tqdm, desc='MCTS iteration', leave=False):
+            path = self.iterate(root, actor, world_model,
+                                num_children, sample, sample_idx, max_tries)
+            if path is None:  # if none skip iteration
+                message = f'\nError in llm parsing, or reached terminal, skipping MCTS iteration...\n'
+                self.logger.info(message) if self.logger else print(message)
+                continue
+            if self.output_trace_in_each_iter:
+                self.trace_in_each_iter.append(deepcopy(path))
 
+        self._output_iter, self._output_cum_reward = SearchStrategies.execute_strategy(root,
+                                                                                       self.cum_reward_func,
+                                                                                       self.output_strategy)
+
+        return self._output_iter, self._output_cum_reward
+
+    def print_with_optimal(self, root: BTMCTSNode, logger: Optional[logging.Logger] = None):
+        console = Console()
+        if root is None:
+            print("The MCTS tree is empty. Please run the MCTS algorithm first.")
+            return
+        # Get the optimal path
+        optimal_path, max_reward = SearchStrategies.execute_strategy(root,
+                                                                     self.cum_reward_func,
+                                                                     self.output_strategy)
+        # Get the set of node IDs in the optimal path
+        optimal_node_ids = set(node.id for node in optimal_path)
+        # Build the tree, passing in the optimal_node_ids
+        rich_tree = self.build_tree(root, optimal_node_ids)
+
+        console.print(rich_tree)
+
+        print(f'Max Reward: {max_reward}')
+
+    def build_tree(self, node: BTMCTSNode, optimal_node_ids=None):
+        # Handle the case where node is None
+        if node is None:
+            return Tree("[bold red]None[/bold red]")
+        # Get parent ID, handle None
+        parent_id = node.parent.id if node.parent else None
+        # Get children IDs, handle empty list or None
+        if node.children:
+            children_ids = [child.id for child in node.children]
+        else:
+            children_ids = []
+        # Safely format Q-value and reward, handling None
+        node_Q = f"{node.Q:.2f}" if node.Q is not None else "None"
+        node_reward = f"{node.reward:.2f}" if node.reward is not None else "None"
+        # Check if node is in the optimal path
+        in_optimal_path = optimal_node_ids and node.id in optimal_node_ids
+        terminal_color = "green" if node.is_terminal else "red"
+        # Customize the node information with colors
+        if in_optimal_path:
+            # Color the node info red if it's in the optimal path
+            node_info = (
+                f"[bold red]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold red]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold red]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold red]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold red]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
+                f"[bold red]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+        else:
+            node_info = (
+                f"[bold cyan]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold cyan]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold cyan]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold cyan]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold red]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
+                f"[bold cyan]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+
+        # Create the tree node with the colored node_info
+        rich_tree = Tree(node_info)
+        # Recurse for each child
+        if node.children:
+            for child in node.children:
+                child_tree = self.build_tree(child, optimal_node_ids)
+                rich_tree.add(child_tree)
+
+        return rich_tree
+
+    def guess_answer(self,
+                     root: BTMCTSNode,
+                     actor: Actor,
+                     world_model: WorldModel,
+                     num_children: int,
+                     sample: dict,
+                     sample_idx: int,
+                     max_tries: int, 
+                     verbose: bool = True
+                     ) -> Tuple[str, list[BTMCTSNode]]:
+        """ Generates an answer for a gsm8k problem via mcts then inference"""
+
+        def exceeds_prompt_limit(agents: tuple = (actor,
+                                                  world_model),
+                                 prompts: tuple = (self._question_prompt_base,
+                                                   self._answer_prompt_base)
+                                 ) -> bool:
+            """Check if any agent exceeds the prompt limit for the corresponding prompt."""
+            return any(agent.prompt_exceeds_limit(prompt)
+                       for agent, prompt in zip(agents, prompts))
+            
+        # run inference from best current node
+        optimal_path, _ = self.search(root, actor, world_model, num_children,
+                                               sample, sample_idx, max_tries)
+        
+        if verbose: 
+            self.print_with_optimal(root)
+        # if best leaf is not terminal, then
+        if optimal_path[-1].is_terminal:
+            answer: dict[str, str] = optimal_path[-1].state.history[-1]
+            return answer['content'], optimal_path
+        
+        else:
+            self._question_prompt_base.copy_history(optimal_path[-1].state)
+            self._answer_prompt_base.copy_history(optimal_path[-1].state)
+
+            step = 0
+            while not (step > max_tries or exceeds_prompt_limit()):
+                # selecting action aka sub-question
+                sub_question = actor.act(self._question_prompt_base)
+                self._question_prompt_base.add(
+                    **{'role': 'assistant', 'content': sub_question})
+                self._answer_prompt_base.add(
+                    **{'role': 'user', 'content': sub_question})
+                # world model returns next state aka sub-answer
+                sub_answer, log_prob = world_model.step_logprobs(
+                    self._answer_prompt_base).values()
+                self._question_prompt_base.add(
+                    **{'role': 'user', 'content': sub_answer})
+                self._answer_prompt_base.add(
+                    **{'role': 'assistant', 'content': sub_answer})
+                # if answer generated
+                if filter_output_type(sub_answer) == 'final_answer':
+                    break
+
+                step += 1
+
+            return sub_answer, optimal_path
 
 if __name__ == "__main__":
+
+    from bigtree import find_names
+    from rich import print
     from agents.reasoners.wm_reasoner import Actor, WorldModel
     from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
     from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
@@ -394,13 +540,26 @@ if __name__ == "__main__":
                       is_terminal=False
                       )
 
-    mcts = MCTS(question_prompt=question_prompt, answer_prompt=answer_prompt)
+    mcts = MCTS(question_prompt=question_prompt,
+                answer_prompt=answer_prompt, num_iters=10)
 
     generator_cfg = VLLMGeneratorConfig(temperature=0.9)
     generator = VLLMGenerator(generator_cfg)
     actor = Actor(generator)
     world_model = WorldModel(generator)
 
-    mcts.iterate(root, actor, world_model, 3, samples[0], 0, 10)
-
+    # optimal_path, max_reward = mcts.search(
+    #     root, actor, world_model, 3, samples[0], 0, 15)
+    # mcts.print_with_optimal(root)
+    # leaf_node = find_names(root, optimal_path[-1].name)[0]
+    # print(leaf_node.state)
+    
+    answer, optimal_path = mcts.guess_answer(root, actor, world_model, 3, samples[0], 0, 15)
     breakpoint()
+    # # name =
+    # # find_names(root, str()).state
+    # # find_names(root, 'NodeID: 13')[0].state
+
+    # mcts.iterate(root, actor, world_model, 3, samples[0], 0, 10)
+
+    # breakpoint()

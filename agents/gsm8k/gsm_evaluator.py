@@ -28,7 +28,6 @@ class GSMEvaluator:
         num_correct = 0
         num_completed = 0
         for idx, sample in tqdm(enumerate(samples)): 
-            
             finished, correct = self.reasoner.generate_answer(idx, sample, num_tries)
             num_correct += finished and correct
             num_completed += finished
@@ -39,18 +38,17 @@ class GSMEvaluator:
         percent_correct = (num_correct / num_completed) * 100
         
         return {'completed': percent_completed, 'correct': percent_correct}
-            
-            
         
 if __name__ == "__main__": 
     
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
     from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
-    from agents.gsm8k.utils import batch_sample_qa_pairs, filter_output_type, gsm_is_correct
+    from agents.gsm8k.utils import batch_sample_gsm, filter_output_type, gsm_is_correct
     import pprint as pp
     from agents.reasoners.wm_reasoner import WorldReasoner
     from agents.reasoners.reasoner import LLMReasoner
     from agents.prompts.standard_prompt import StandardGSMPromptTemplate
+    from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
     
     random.seed(10)
     
@@ -60,23 +58,24 @@ if __name__ == "__main__":
     
     q_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('question', 1, 'question')
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')
-    # generator_cfg = VLLMGeneratorConfig()
-    # generator = VLLMGenerator(generator_cfg)
-    cfg = ArgoGeneratorConfig()
-    generator = LangChainFSLGenerator(cfg)
-    reasoner = WorldReasoner(generator, a_prompt, q_prompt, filter_output_type)
-    
+    generator_cfg = VLLMGeneratorConfig()
+    generator = VLLMGenerator(generator_cfg)
+    # cfg = ArgoGeneratorConfig()
+    # generator = LangChainFSLGenerator(cfg)
+    # reasoner = WorldReasoner(generator, a_prompt, q_prompt, filter_output_type)
+    reasoner = MCTSWorldReasoner(generator, a_prompt, q_prompt, filter_output_type)
     # dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
     # dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    dataset = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
+    dataset = read_jsonl('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
     evaluator = GSMEvaluator(dataset, reasoner)
     
     metrics = evaluator.evaluate(15, 10)
     pp.pprint(metrics)
+    breakpoint()
     
     prompt_2 = StandardGSMPromptTemplate()
     reasoner_2 = LLMReasoner(generator, prompt_2, filter_output_type)
-    evaluator_2 = GSMEvaluator(dataset, reasoner_2)
-    metrics_2 = evaluator_2.evaluate(15, 10)
-    pp.pprint(metrics_2)
+    # evaluator_2 = GSMEvaluator(dataset, reasoner_2)
+    # metrics_2 = evaluator_2.evaluate(15, 10)
+    # pp.pprint(metrics_2)
     breakpoint()

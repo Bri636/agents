@@ -20,10 +20,9 @@ import random
 from textwrap import dedent
 from rich.tree import Tree
 
-from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig, 
+from agents.mcts.base import (SearchAlgorithm, WorldModel, SearchConfig, 
                                                 State, Action, Example, Trace)
 from agents.utils import calculate_returns
-from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 import gymnasium as gym 
@@ -81,8 +80,8 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         """
         # class-level attr
         # tracks how many instances of MCTSNode have been created as a way to show id of node 
-        self.id = next(MCTSNode.id_iter)
-        self._name = f'NodeID: {self.id}'
+        self.id = next(BTMCTSNode.id_iter)
+        self._name = f'{self.id}'
         
         super().__init__(name=self._name, parent=parent)
         
@@ -98,6 +97,8 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         
         # internal attr tracking 
         self._cum_rewards: list[float] = [] # cumulative rewards from rollout
+        # heurestic reward 
+        self._fast_heuristic = 0.0
         
     @property 
     def state(self) -> LLMNodeState: 
@@ -122,7 +123,7 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         if self.cum_rewards: # if node been explored before 
             return self.calc_q(self.cum_rewards)
         else: # else, Q value to infinity --> explore
-            return np.inf
+            return 0.0
         
         
     def __str__(self) -> str:
@@ -166,47 +167,47 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         return rich_output
         
         
-if __name__=="__main__": 
+# if __name__=="__main__": 
     
-    from agents.reasoners.wm_reasoner import Actor, WorldModel
-    from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
-    from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-    from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
+#     from agents.reasoners.wm_reasoner import Actor, WorldModel
+#     from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
+#     from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+#     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
 
-    data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
-    batch_size = 16
+#     data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
+#     batch_size = 16
 
-    dataset = read_jsonl(data_path)
-    samples = batch_sample_gsm(dataset, batch_size)
+#     dataset = read_jsonl(data_path)
+#     samples = batch_sample_gsm(dataset, batch_size)
 
-    question_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
-        'question', 1, 'question')
-    answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
-        'answer', 1, 'answer')
+#     question_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
+#         'question', 1, 'question')
+#     answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
+#         'answer', 1, 'answer')
 
-    question = samples[0]['question']
-    question_prompt.add('user', content=question)
-    answer_prompt.add('user', content=question)
+#     question = samples[0]['question']
+#     question_prompt.add('user', content=question)
+#     answer_prompt.add('user', content=question)
 
-    root = MCTSNode(state=question_prompt,  # state is original question
-                    action=None,
-                    reward=None,
-                    parent=None,
-                    is_terminal=False
-                    )
-    child = MCTSNode(state=question_prompt, 
-                     action='Child depth 1', 
-                     reward=None, 
-                     parent=root, 
-                     is_terminal=True)
+#     root = MCTSNode(state=question_prompt,  # state is original question
+#                     action=None,
+#                     reward=None,
+#                     parent=None,
+#                     is_terminal=False
+#                     )
+#     child = MCTSNode(state=question_prompt, 
+#                      action='Child depth 1', 
+#                      reward=None, 
+#                      parent=root, 
+#                      is_terminal=True)
     
-    child_2 = MCTSNode(state=question_prompt, 
-                     action='Child depth 1', 
-                     reward=None, 
-                     parent=child, 
-                     is_terminal=True)
-    root.children = [child]
+#     child_2 = MCTSNode(state=question_prompt, 
+#                      action='Child depth 1', 
+#                      reward=None, 
+#                      parent=child, 
+#                      is_terminal=True)
+#     root.children = [child]
     
-    child.children = [child_2]
+#     child.children = [child_2]
     
-    breakpoint()
+#     breakpoint()
