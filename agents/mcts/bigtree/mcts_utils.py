@@ -82,7 +82,8 @@ class SearchStrategies:
             raise ValueError(f"Strategy '{strategy}' does not exist. Choose from {list(cls.strategies.keys())}")
         instance = cls()
         return strategy_func(instance, root, cum_reward_func) 
-        
+    
+# class EvaluationStrategies
         
 class RewardRolloutStrategies:
     """ Strategies for assigning rewards for terminal and non-terminal phases """ 

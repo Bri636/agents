@@ -28,6 +28,8 @@ from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.mcts.bigtree.mcts_utils import SearchStrategies
 # from agents.utils import configure_logger
 
+# importing types 
+from agents.mcts.bigtree import Prompt, Computable
 
 def win_lose(win: bool,
              win_reward: float = 100,
@@ -35,34 +37,19 @@ def win_lose(win: bool,
              ) -> float:
     return win_reward if win else lose_reward
 
-
-class MCTSResult(NamedTuple):
-    """ Simple Container Class for MCTS Output """
-    terminal_state: State
-    cum_reward: float
-    trace: Trace
-    trace_of_nodes: list[BTMCTSNode]
-    tree_state: BTMCTSNode
-    trace_in_each_iter: list[list[BTMCTSNode]] = None
-    tree_state_after_each_iter: list[BTMCTSNode] = None
-    aggregated_result: Optional[Hashable] = None
-
-
-class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
+class MCTS:
     def __init__(self,
-                 question_prompt: BasePromptTemplate | GSMLlamaPromptTemplate,
-                 answer_prompt: BasePromptTemplate | GSMLlamaPromptTemplate,
+                 question_prompt: Prompt,
+                 answer_prompt: Prompt,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
                  depth_limit: int = 5,
                  num_iters: int = 10,
-                 cum_reward_func: Callable[[list[float]], float] = sum,
-                 calc_q_func: Callable[[list[float]], float] = np.mean,
-                 simulate_strategy: str | Callable[[list[float]], int] = 'max',
+                 cum_reward_func: Callable[[Computable], float] = sum,
+                 calc_q_func: Callable[[Computable], float] = np.mean,
+                 simulate_strategy: str | Callable[[Computable], int] = 'max',
                  output_strategy: str = 'max_reward',
                  use_tqdm: bool = True,
-                 node_visualizer: Callable[[BTMCTSNode],
-                                           dict] = lambda x: x.__dict__,
                  reward_strategy: Literal['base'] = 'base',
                  logger: Optional[logging.Logger] = None
                  ) -> None:
@@ -114,7 +101,6 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         self._output_cum_reward = -math.inf
         self.trace_in_each_iter = []
         self.use_tqdm: bool = use_tqdm
-        self.node_visualizer = node_visualizer
         self.terminal_reward_strategy, self.reward_strategy = reward_strategies.get(
             reward_strategy)
 
@@ -169,7 +155,6 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
             best_child = self._uct_select(node)
             node = best_child  # set node as best child
 
-    # NOTE: since q/a prompt is used just for copying state of node, maybe just use it as an attr container
     def expand(self,
                node: BTMCTSNode,
                actor: Actor,
@@ -184,7 +169,6 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         self._question_prompt_base.copy_history(node.state)
         self._answer_prompt_base.copy_history(node.state)
 
-        # get actions
         sub_questions = [actor.act(node.state) for _ in range(num_children)]
 
         children = []
@@ -209,9 +193,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 reward = self.reward_strategy(
                     log_prob)  # get log_prob as reward
                 terminated = False  # set as not done
-            # breakpoint()
-            # embeddings = actor.generator.embed(sub_answer)
-            # breakpoint()
+                
             child_node = BTMCTSNode(state=copy.deepcopy(self._question_prompt_base),
                                     action=sub_question,
                                     reward=reward,
@@ -237,61 +219,54 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                       verbose: bool = False
                       ) -> bool:
         """ Simulates a single node until end of problem and returns a flag if successfully simulated or not """
-        # randomly simulate child
-        child_idx: int = random.sample(
-            range(len(path[-1].children)), 1)[0]  # randomly choose a child
+        # randomly select child
+        child_idx: int = random.sample(range(len(path[-1].children)), 1)[0]  # randomly choose a child
         node_to_sim: BTMCTSNode = path[-1].children[child_idx]
-
+        # copy child state for simulation
         self._question_prompt_base.copy_history(node_to_sim.state)
         self._answer_prompt_base.copy_history(node_to_sim.state)
 
-        step, terminated, exceeds_limit = 0, False, False
         rollout_rewards = []
-        while not terminated:
-            # selecting action aka sub-question
+        for _ in range(1, max_tries + 1):
+            # generating sub-question
             sub_question = actor.act(self._question_prompt_base)
-            self._question_prompt_base.add(
-                **{'role': 'assistant', 'content': sub_question})
-            self._answer_prompt_base.add(
-                **{'role': 'user', 'content': sub_question})
-            # world model returns next state aka sub-answer
-            sub_answer, log_prob = world_model.step_logprobs(
-                self._answer_prompt_base).values()
-            self._question_prompt_base.add(
-                **{'role': 'user', 'content': sub_answer})
-            self._answer_prompt_base.add(
-                **{'role': 'assistant', 'content': sub_answer})
-
+            self._question_prompt_base.add(role='assistant', content=sub_question)
+            self._answer_prompt_base.add(role='user', content=sub_question)
+            # generating sub-answer
+            step_result = world_model.step_logprobs(self._answer_prompt_base)
+            sub_answer = step_result.get('text')
+            log_prob = step_result.get('log_probs')
+            # updating prompts
+            self._question_prompt_base.add(role='user', content=sub_answer)
+            self._answer_prompt_base.add(role='assistant', content=sub_answer)
+            # collecting reward
             rollout_rewards.append(self.reward_strategy(log_prob))
+            # Check for termination condition
             if filter_output_type(sub_answer) == 'final_answer':
                 out, message = gsm_is_correct(sample_idx, sub_answer, sample)
                 rollout_rewards.append(self.terminal_reward_strategy(out))
-                terminated = True
                 if verbose:
                     print(message)
-
-            def exceeds_prompt_limit(agents: tuple = (actor,
-                                                      world_model),
-                                     prompts: tuple = (self._question_prompt_base,
-                                                       self._answer_prompt_base)
-                                     ) -> bool:
-                """Check if any agent exceeds the prompt limit for the corresponding prompt."""
-                return any(agent.prompt_exceeds_limit(prompt)
-                           for agent, prompt in zip(agents, prompts))
-
-            step += 1
-            if step > max_tries or bool(exceeds_prompt_limit()):
-                return False  # flag for skipping backprop; assumption - parsing error
+                # reset prompts to base again
+                self._question_prompt_base.reset()
+                self._answer_prompt_base.reset()
+                # idea return flag, if flag then skip backpropagation and then move to next
+                rollout_reward = sum(rollout_rewards)
+                node = path[-1].children[child_idx]
+                node.reward = rollout_reward
+                path.append(node)
+                # successful simulation
+                return True
+            # exit if prompt exceeds limit aka its a run-on
+            agents = (actor, world_model)
+            prompts = (self._question_prompt_base, self._answer_prompt_base)
+            if any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
+                return False  # Skip backpropagation due to prompt limit
+        # if failed in number of tries, exit
         # reset prompts to base again
         self._question_prompt_base.reset()
         self._answer_prompt_base.reset()
-        # idea return flag, if flag then skip backpropagation and then move to next
-        rollout_reward = sum(rollout_rewards)
-        node = path[-1].children[child_idx]
-        node.reward = rollout_reward
-        path.append(node)
-
-        return True
+        return False
 
     def back_propagate(self, path: list[BTMCTSNode]) -> float:
         """ 
@@ -389,39 +364,28 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
         if root is None:
             print("The MCTS tree is empty. Please run the MCTS algorithm first.")
             return
-        # Get the optimal path
         optimal_path, max_reward = SearchStrategies.execute_strategy(root,
                                                                      self.cum_reward_func,
                                                                      self.output_strategy)
-        # Get the set of node IDs in the optimal path
         optimal_node_ids = set(node.id for node in optimal_path)
-        # Build the tree, passing in the optimal_node_ids
         rich_tree = self.build_tree(root, optimal_node_ids)
-
+        print(f'Reasoning Trace:')
+        print(f'Max Reward: {max_reward}')
         console.print(rich_tree)
 
-        print(f'Max Reward: {max_reward}')
-
     def build_tree(self, node: BTMCTSNode, optimal_node_ids=None):
-        # Handle the case where node is None
         if node is None:
             return Tree("[bold red]None[/bold red]")
-        # Get parent ID, handle None
         parent_id = node.parent.id if node.parent else None
-        # Get children IDs, handle empty list or None
         if node.children:
             children_ids = [child.id for child in node.children]
         else:
             children_ids = []
-        # Safely format Q-value and reward, handling None
         node_Q = f"{node.Q:.2f}" if node.Q is not None else "None"
         node_reward = f"{node.reward:.2f}" if node.reward is not None else "None"
-        # Check if node is in the optimal path
         in_optimal_path = optimal_node_ids and node.id in optimal_node_ids
         terminal_color = "green" if node.is_terminal else "red"
-        # Customize the node information with colors
         if in_optimal_path:
-            # Color the node info red if it's in the optimal path
             node_info = (
                 f"[bold red]Node ID:[/] [green]{node.id}[/] | "
                 f"[bold red]Parent ID:[/] [magenta]{parent_id}[/] | "
@@ -440,9 +404,7 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 f"[bold cyan]Children IDs:[/] [blue]{children_ids}[/]"
             )
 
-        # Create the tree node with the colored node_info
         rich_tree = Tree(node_info)
-        # Recurse for each child
         if node.children:
             for child in node.children:
                 child_tree = self.build_tree(child, optimal_node_ids)
@@ -460,53 +422,42 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                      max_tries: int, 
                      verbose: bool = True
                      ) -> Tuple[str, list[BTMCTSNode]]:
-        """ Generates an answer for a gsm8k problem via mcts then inference"""
-
-        def exceeds_prompt_limit(agents: tuple = (actor,
-                                                  world_model),
-                                 prompts: tuple = (self._question_prompt_base,
-                                                   self._answer_prompt_base)
-                                 ) -> bool:
-            """Check if any agent exceeds the prompt limit for the corresponding prompt."""
-            return any(agent.prompt_exceeds_limit(prompt)
-                       for agent, prompt in zip(agents, prompts))
-            
+        """ Generates an answer for a gsm8k problem via mcts then inference """  
         # run inference from best current node
         optimal_path, _ = self.search(root, actor, world_model, num_children,
-                                               sample, sample_idx, max_tries)
-        
+                                        sample, sample_idx, max_tries)
         if verbose: 
             self.print_with_optimal(root)
         # if best leaf is not terminal, then
         if optimal_path[-1].is_terminal:
-            answer: dict[str, str] = optimal_path[-1].state.history[-1]
-            return answer['content'], optimal_path
-        
+            answer: str = optimal_path[-1].state.history[-1].content
+            return answer, optimal_path
         else:
             self._question_prompt_base.copy_history(optimal_path[-1].state)
             self._answer_prompt_base.copy_history(optimal_path[-1].state)
-
-            step = 0
-            while not (step > max_tries or exceeds_prompt_limit()):
-                # selecting action aka sub-question
+            
+            for _ in range(1, max_tries + 1):
+                # generating sub-question
                 sub_question = actor.act(self._question_prompt_base)
-                self._question_prompt_base.add(
-                    **{'role': 'assistant', 'content': sub_question})
-                self._answer_prompt_base.add(
-                    **{'role': 'user', 'content': sub_question})
-                # world model returns next state aka sub-answer
-                sub_answer, log_prob = world_model.step_logprobs(
-                    self._answer_prompt_base).values()
-                self._question_prompt_base.add(
-                    **{'role': 'user', 'content': sub_answer})
-                self._answer_prompt_base.add(
-                    **{'role': 'assistant', 'content': sub_answer})
-                # if answer generated
-                if filter_output_type(sub_answer) == 'final_answer':
+                self._question_prompt_base.add(role='assistant', content=sub_question)
+                self._answer_prompt_base.add(role='user', content=sub_question)
+                # generating sub-answer
+                step_result = world_model.step_logprobs(self._answer_prompt_base)
+                sub_answer = step_result.get('text')
+                log_prob = step_result.get('log_probs')
+                # updating prompts
+                self._question_prompt_base.add(role='user', content=sub_answer)
+                self._answer_prompt_base.add(role='assistant', content=sub_answer)
+                # using agents and prompts to test if condition below
+                agents = (actor, world_model)
+                prompts = (self._question_prompt_base, self._answer_prompt_base)
+                # if final answer reached or exceed prompt limit, break from loop 
+                if filter_output_type(sub_answer) == "final_answer": 
                     break
-
-                step += 1
-
+                elif any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
+                    break
+            self._question_prompt_base.reset()
+            self._answer_prompt_base.reset()
             return sub_answer, optimal_path
 
 if __name__ == "__main__":

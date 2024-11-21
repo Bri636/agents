@@ -25,7 +25,7 @@ After the second spray kills 20% of the remaining germs, there will be 50 - 20 =
 
 """
 
-ANS_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
+ANS_RE = re.compile(r"####\s*\$?\s*([-+]?\d+(?:,\d{3})*(?:\.\d+)?)", re.IGNORECASE)
 INVALID_ANS = "[invalid]"
 
 def read_jsonl(path: str) -> list[dict[str, str]]:
@@ -45,27 +45,49 @@ def get_examples(split):
 
     print(f"{len(examples)} {split} examples")
     return examples
-
+    
 def gsm_extract_answer(completion: str) -> str:
     """ 
     Parses through a string and returns the answer as a str
     
     Expects the answer in this format: 
-    Answer is #### -567.89 ===> -567.89
+    Answer is #### -567.89 or #### -567.89. ===> -567.89
     """
-    
     match = ANS_RE.search(completion)
     if match:
         match_str = match.group(1).strip()
         match_str = match_str.replace(",", "")
+        match_str = match_str.rstrip('.')
         return match_str
     else:
         return INVALID_ANS
     
-def gsm_is_correct(model_completion: str, gt_example: dict[str, str]) -> bool:
-    gt_answer = gsm_extract_answer(gt_example["answer"])
-    assert gt_answer != INVALID_ANS
-    return gsm_extract_answer(model_completion) == gt_answer
+def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_answer', '[invalid]']:
+    """Filter an LLM output and return what kind of response it is."""
+    # Patterns
+    FA = re.compile(r"####\s*\$?\s*[-+]?\d+(?:,\d{3})*(?:\.\d+)?", re.IGNORECASE)
+    Q = re.compile(r"\bQuestion\b", re.IGNORECASE)
+    A = re.compile(r"\bAnswer\b", re.IGNORECASE)
+
+    # Search for patterns
+    FA_searched = FA.search(llm_output)
+    Q_searched = Q.search(llm_output)
+    A_searched = A.search(llm_output)
+
+    # Determine the output type
+    if FA_searched:
+        return 'final_answer'
+    elif Q_searched:
+        return 'question'
+    elif A_searched:
+        return 'answer'
+    else:
+        return '[invalid]'
+    
+# def gsm_is_correct(model_completion: str, gt_example: dict[str, str]) -> bool:
+#     gt_answer = gsm_extract_answer(gt_example["answer"])
+#     assert gt_answer != INVALID_ANS
+#     return gsm_extract_answer(model_completion) == gt_answer
 
 def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str]) -> Tuple[bool, str]:
     """ Checks if final model's output matches the gold answer """ 
@@ -95,23 +117,5 @@ def batch_eval_gsm(parsed_model_answers: list[str], gsm_qa_pairs: list[dict[str,
     """ Batch evals model answers to qa pairs from dataset"""
     return [gsm_is_correct(answer, example) for answer, example 
             in zip(parsed_model_answers, gsm_qa_pairs)]
-    
-def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_answer', '[invalid]']: 
-    """ Filter an llm output and returns what kind of response it is """
-    Q = re.compile(r"Question (\-?[0-9\.\,]+)")
-    A = re.compile(r"Answer (\-?[0-9\.\,]+)")
-    FA = re.compile(r"####\s*(-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)")
-    
-    Q_searched = Q.search(llm_output)
-    A_searched = A.search(llm_output)
-    FA_searched = FA.search(llm_output)
 
-    if Q_searched: 
-        return 'question'
-    elif FA_searched: # place FA searched in earlier order
-        return 'final_answer'
-    elif A_searched: 
-        return 'answer'
-    else: 
-        return '[invalid]'
     

@@ -31,7 +31,7 @@ def create_population(tp_set: List, mutator_set: List, problem_description: str)
         'problem_description' : problem_description,
         'elites' : [],
         'units': [EvolutionUnit(**{
-            'T' : t, 
+            'T' : t, # context of problem 
             'M' : m,
             'P' : '',
             'fitness' : 0,

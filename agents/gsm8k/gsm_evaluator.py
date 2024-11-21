@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable, Tuple, Any
 import random
 from tqdm import tqdm 
+from dataclasses import dataclass
 
 from agents.gsm8k.utils import read_jsonl
 from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
@@ -11,7 +12,11 @@ from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
-
+@dataclass
+class Metrics: 
+    completed: float
+    correct: float 
+    
 class GSMEvaluator: 
 
     def __init__(self, dataset: list[dict[str, str]], reasoner: BaseReasoner, seed: int=10) -> None:
@@ -28,12 +33,14 @@ class GSMEvaluator:
         num_correct = 0
         num_completed = 0
         for idx, sample in tqdm(enumerate(samples)): 
-            finished, correct = self.reasoner.generate_answer(idx, sample, num_tries)
+            finished, correct, message = self.reasoner.generate_answer(idx, sample, num_tries)
             num_correct += finished and correct
             num_completed += finished
             self.reasoner.reset_pass()
-
-            print(f'Correct: {num_correct}')
+            print(f'Reasoner: {message}')
+            print(f'Correct: {num_correct} Out of {idx + 1} Questions')
+            print(f'=================================== Next Question {idx + 1} ===================================')
+            
         percent_completed = (num_completed / num_samples) * 100
         percent_correct = (num_correct / num_completed) * 100
         
@@ -51,10 +58,6 @@ if __name__ == "__main__":
     from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
     
     random.seed(10)
-    
-    def log_prob_reward(log_probs_seq: list[float]) -> float: 
-        """ Returns the average log probability"""
-        return float(sum(log_probs_seq) / len(log_probs_seq))
     
     q_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('question', 1, 'question')
     a_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate('answer', 1, 'answer')

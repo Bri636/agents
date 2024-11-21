@@ -9,7 +9,7 @@ from typing import Literal, Union, Optional, Any
 from pydantic import BaseModel, Field
 
 from agents.utils import BaseConfig
-from agents.prompts.base_prompt_template import BasePromptTemplate, BaseInputPayload, BaseOutputPayload
+from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents import prompt_registry
 
 PROMPT_NAME = 'Actor'
