@@ -3,8 +3,12 @@
 from __future__ import annotations
 from typing import Callable, Tuple, Any
 import random
-from tqdm import tqdm 
+from tqdm import tqdm
+from tqdm.rich import tqdm
 from dataclasses import dataclass
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from agents.gsm8k.utils import read_jsonl
 from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
@@ -32,17 +36,37 @@ class GSMEvaluator:
         
         num_correct = 0
         num_completed = 0
-        for idx, sample in tqdm(enumerate(samples)): 
-            finished, correct, message = self.reasoner.generate_answer(idx, sample, num_tries)
-            num_correct += finished and correct
-            num_completed += finished
-            self.reasoner.reset_pass()
-            print(f'Reasoner: {message}')
-            print(f'Correct: {num_correct} Out of {idx + 1} Questions')
-            print(f'=================================== Next Question {idx + 1} ===================================')
-            
+        console = Console()
+        with tqdm(total=num_samples, desc=f"GSM Evaluation - {num_samples} Samples", leave=True) as progress_bar:
+            for idx, sample in enumerate(samples):
+                finished, correct, message, panel = self.reasoner.generate_answer(idx, sample, num_tries)
+                num_correct += finished and correct
+                num_completed += finished
+                self.reasoner.reset_pass()
+                
+                # Printing results for each sample
+                large_bar = f"Question {idx + 1}"
+                console.rule(large_bar, style="bold")
+                console.print(panel)
+                
+                reasoner_correct_text = Text.assemble(
+                ("* Reasoner: ", "bold red"),
+                (f"{message}\n", "white"),
+                ("* Correct: ", "bold red"),
+                (f"{num_correct} Questions Correct Out of {idx + 1} Total Questions Asked", "white")
+            )
+                panel_summ = Panel(
+                reasoner_correct_text,
+                border_style="white",
+                title="Status",
+                title_align="center",
+                expand=True
+            )
+                console.print(panel_summ)
+                progress_bar.update(1)
+        
         percent_completed = (num_completed / num_samples) * 100
-        percent_correct = (num_correct / num_completed) * 100
+        percent_correct = (num_correct / num_completed) * 100 if num_completed > 0 else 0.0
         
         return {'completed': percent_completed, 'correct': percent_correct}
         

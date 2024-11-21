@@ -1,34 +1,23 @@
 """ Bigtree version of with LLM MCTS """
 
 from __future__ import annotations
-from os import PathLike
-from copy import deepcopy
 import copy
-from typing import Generic, Optional, NamedTuple, Callable, Hashable, Any, Literal, Tuple, Union
+from typing import Optional, Callable, Any, Literal, Tuple
 from rich.console import Console
-from rich.table import Table
-from io import StringIO
 import numpy as np
 from tqdm.rich import trange, tqdm
-import random
-from textwrap import dedent
+import random, math, logging
+# display packages
 from rich.tree import Tree
-import math
-import logging
-from agents.mcts.base import (SearchAlgorithm, WorldModel, SearchConfig,
-                              State, Action, Example, Trace)
-from agents.utils import calculate_returns
-# from agents.algorithms.tree_search.mcts_simple import MCTS, MCTSNode
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
+# imported classes
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.reasoners.wm_reasoner import WorldModel, Actor
-
-from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.mcts.bigtree.mcts_utils import SearchStrategies
-# from agents.utils import configure_logger
-
-# importing types 
 from agents.mcts.bigtree import Prompt, Computable
 
 def win_lose(win: bool,
@@ -351,7 +340,7 @@ class MCTS:
                 self.logger.info(message) if self.logger else print(message)
                 continue
             if self.output_trace_in_each_iter:
-                self.trace_in_each_iter.append(deepcopy(path))
+                self.trace_in_each_iter.append(copy.deepcopy(path))
 
         self._output_iter, self._output_cum_reward = SearchStrategies.execute_strategy(root,
                                                                                        self.cum_reward_func,
@@ -359,20 +348,25 @@ class MCTS:
 
         return self._output_iter, self._output_cum_reward
 
-    def print_with_optimal(self, root: BTMCTSNode, logger: Optional[logging.Logger] = None):
-        console = Console()
-        if root is None:
-            print("The MCTS tree is empty. Please run the MCTS algorithm first.")
-            return
+    def print_with_optimal(self, root: BTMCTSNode) -> Panel:
         optimal_path, max_reward = SearchStrategies.execute_strategy(root,
                                                                      self.cum_reward_func,
                                                                      self.output_strategy)
         optimal_node_ids = set(node.id for node in optimal_path)
         rich_tree = self.build_tree(root, optimal_node_ids)
-        print(f'Reasoning Trace:')
-        print(f'Max Reward: {max_reward}')
-        console.print(rich_tree)
-
+        title = Text.assemble(
+        "Reasoning Trace - Max Reward = ", 
+        (f"{max_reward}", "bold red"), 
+        style="bold white"
+    )
+        panel = Panel(
+            rich_tree,
+            title=title,
+            border_style="white",
+            expand=True
+        )
+        return panel
+        
     def build_tree(self, node: BTMCTSNode, optimal_node_ids=None):
         if node is None:
             return Tree("[bold red]None[/bold red]")
@@ -391,7 +385,7 @@ class MCTS:
                 f"[bold red]Parent ID:[/] [magenta]{parent_id}[/] | "
                 f"[bold red]Q-Value:[/] [yellow]{node_Q}[/] | "
                 f"[bold red]Reward:[/] [yellow]{node_reward}[/] | "
-                f"[bold red]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
+                f"[bold red]Terminal:[/] [bold {terminal_color}]{node.is_terminal}[/] | "
                 f"[bold red]Children IDs:[/] [blue]{children_ids}[/]"
             )
         else:
@@ -400,7 +394,7 @@ class MCTS:
                 f"[bold cyan]Parent ID:[/] [magenta]{parent_id}[/] | "
                 f"[bold cyan]Q-Value:[/] [yellow]{node_Q}[/] | "
                 f"[bold cyan]Reward:[/] [yellow]{node_reward}[/] | "
-                f"[bold red]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
+                f"[bold cyan]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
                 f"[bold cyan]Children IDs:[/] [blue]{children_ids}[/]"
             )
 
@@ -421,17 +415,17 @@ class MCTS:
                      sample_idx: int,
                      max_tries: int, 
                      verbose: bool = True
-                     ) -> Tuple[str, list[BTMCTSNode]]:
+                     ) -> Tuple[str, list[BTMCTSNode], Panel]:
         """ Generates an answer for a gsm8k problem via mcts then inference """  
         # run inference from best current node
         optimal_path, _ = self.search(root, actor, world_model, num_children,
                                         sample, sample_idx, max_tries)
         if verbose: 
-            self.print_with_optimal(root)
+            panel = self.print_with_optimal(root)
         # if best leaf is not terminal, then
         if optimal_path[-1].is_terminal:
             answer: str = optimal_path[-1].state.history[-1].content
-            return answer, optimal_path
+            return answer, optimal_path, panel
         else:
             self._question_prompt_base.copy_history(optimal_path[-1].state)
             self._answer_prompt_base.copy_history(optimal_path[-1].state)
@@ -458,59 +452,5 @@ class MCTS:
                     break
             self._question_prompt_base.reset()
             self._answer_prompt_base.reset()
-            return sub_answer, optimal_path
-
-if __name__ == "__main__":
-
-    from bigtree import find_names
-    from rich import print
-    from agents.reasoners.wm_reasoner import Actor, WorldModel
-    from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
-    from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-    from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-
-    data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
-    batch_size = 16
-
-    dataset = read_jsonl(data_path)
-    samples = batch_sample_gsm(dataset, batch_size)
-
-    question_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
-        'question', 1, 'question')
-    answer_prompt: GSMLlamaPromptTemplate = GSMLlamaPromptTemplate(
-        'answer', 1, 'answer')
-
-    question = samples[0]['question']
-    question_prompt.add('user', content=question)
-    answer_prompt.add('user', content=question)
-
-    root = BTMCTSNode(state=question_prompt,  # state is original question
-                      action=None,
-                      reward=None,
-                      parent=None,
-                      is_terminal=False
-                      )
-
-    mcts = MCTS(question_prompt=question_prompt,
-                answer_prompt=answer_prompt, num_iters=10)
-
-    generator_cfg = VLLMGeneratorConfig(temperature=0.9)
-    generator = VLLMGenerator(generator_cfg)
-    actor = Actor(generator)
-    world_model = WorldModel(generator)
-
-    # optimal_path, max_reward = mcts.search(
-    #     root, actor, world_model, 3, samples[0], 0, 15)
-    # mcts.print_with_optimal(root)
-    # leaf_node = find_names(root, optimal_path[-1].name)[0]
-    # print(leaf_node.state)
-    
-    answer, optimal_path = mcts.guess_answer(root, actor, world_model, 3, samples[0], 0, 15)
-    breakpoint()
-    # # name =
-    # # find_names(root, str()).state
-    # # find_names(root, 'NodeID: 13')[0].state
-
-    # mcts.iterate(root, actor, world_model, 3, samples[0], 0, 10)
-
-    # breakpoint()
+            
+            return sub_answer, optimal_path, panel

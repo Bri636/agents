@@ -3,6 +3,8 @@
 from __future__ import annotations
 from typing import Callable, Any, Tuple
 
+from rich.panel import Panel
+
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
@@ -80,7 +82,12 @@ class MCTSWorldReasoner(BaseReasoner):
         self.question_prompt = question_prompt
         self.llm_output_filter = llm_output_filter
 
-    def generate_answer(self, idx: int, sample: dict[str, str], num_tries: int, num_children: int = 3) -> Tuple[bool, bool, str]:
+    def generate_answer(self, 
+                        idx: int, 
+                        sample: dict[str, str], 
+                        num_tries: int, 
+                        num_children: int = 3
+                        ) -> Tuple[bool, bool, str, Panel | None]:
         """ 
         Attempts to generate an answer for a sample question; it will return - 
         Tuple[if successfully generated, and if answer was correct]
@@ -89,8 +96,8 @@ class MCTSWorldReasoner(BaseReasoner):
         self.question_prompt.add('user', content=question)
         self.answer_prompt.add('user', content=question)
         # if answer was generated, and if answer was correct or not
-        generated, correct, message = False, False, f'Answer Incorrect or failed to Generate for Question :('
-        
+        generated, correct = False, False
+        message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
         root = BTMCTSNode(state=self.question_prompt,  # state is original question
                           action=None,
                           reward=None,
@@ -102,7 +109,7 @@ class MCTSWorldReasoner(BaseReasoner):
                     )
 
         try:
-            answer, optimal_path = mcts.guess_answer(root=root,
+            answer, optimal_path, panel = mcts.guess_answer(root=root,
                                                      actor=self.actor,
                                                      world_model=self.world_model,
                                                      sample=sample,
@@ -115,7 +122,7 @@ class MCTSWorldReasoner(BaseReasoner):
                 correct, message = gsm_is_correct(idx, answer, sample)
 
             generated = True
-            return generated, correct, message
+            return generated, correct, message, panel
 
         except Exception as e:
-            return generated, correct, message
+            return generated, correct, message, panel
