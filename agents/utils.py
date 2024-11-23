@@ -91,6 +91,14 @@ class BaseConfig(BaseModel):
         with open(path) as fp:
             raw_data = yaml.safe_load(fp)
         return cls(**raw_data)
+    
+def register_strategy(strategy_dict, name=None):
+    """Decorator to register a method as a search strategy."""
+    def decorator(func):
+        strategy_name = name or func.__name__
+        strategy_dict[strategy_name] = func
+        return func
+    return decorator
 
 def batch_data(data: list[T], chunk_size: int) -> list[list[T]]:
     """Batch data into chunks of size chunk_size.

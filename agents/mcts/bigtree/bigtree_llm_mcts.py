@@ -28,8 +28,8 @@ def win_lose(win: bool,
 
 class MCTS:
     def __init__(self,
-                 question_prompt: Prompt,
-                 answer_prompt: Prompt,
+                 question_prompt_base: Prompt,
+                 answer_prompt_base: Prompt,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
                  depth_limit: int = 5,
@@ -93,11 +93,11 @@ class MCTS:
         self.terminal_reward_strategy, self.reward_strategy = reward_strategies.get(
             reward_strategy)
 
-        # base question prompt used for expansion and simulation
-        self._question_prompt_base = question_prompt
+        # base question prompt used for expansion and simulation; should be a blank template
+        question_prompt_base.reset(), answer_prompt_base.reset()
         # base answer prompt used for expansion and simulation
-        self._answer_prompt_base = answer_prompt
-
+        self._question_prompt_base = copy.deepcopy(question_prompt_base)
+        self._answer_prompt_base = copy.deepcopy(answer_prompt_base)
         self.logger = logger
 
     def _is_terminal_with_depth_limit(self, node: BTMCTSNode) -> bool:
@@ -357,7 +357,7 @@ class MCTS:
         title = Text.assemble(
         "Reasoning Trace - Max Reward = ", 
         (f"{max_reward}", "bold red"), 
-        style="bold white"
+        style="bold purple4"
     )
         panel = Panel(
             rich_tree,

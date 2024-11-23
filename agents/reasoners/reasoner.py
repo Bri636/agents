@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Callable, Tuple
+from rich.panel import Panel
 
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.utils import BaseConfig
@@ -30,7 +31,11 @@ class LLMReasoner(BaseReasoner):
         self.prompt = prompt
         self.llm_output_filter = llm_output_filter
     
-    def generate_answer(self, idx: int, sample: GSM8KProblem, num_tries: int) -> Tuple[bool, str | None]:
+    def generate_answer(self, 
+                        idx: int, 
+                        sample: GSM8KProblem, 
+                        num_tries: int
+                        ) -> Tuple[bool, bool, str, Panel | None]:
         """
         Performs eval on one question from GSM8K and returns if successfully parsed, 
         and if llm was correct or not 
@@ -39,6 +44,8 @@ class LLMReasoner(BaseReasoner):
         question: str = sample['question']
         self.prompt.add(**{'role': 'user', 'content': question})
         
+        generated, correct = False, False
+        message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
         try: 
             for _ in range(num_tries): 
                 
@@ -47,15 +54,16 @@ class LLMReasoner(BaseReasoner):
                 filtered_output = self.llm_output_filter(llm_output)
                 if filtered_output == 'final_answer': 
                     self.prompt.reset()
-                    out = gsm_is_correct(idx, llm_output, sample)
-                    return True, out
+                    correct, message = gsm_is_correct(idx, llm_output, sample)
+                    return True, correct, message, panel
+                
                 elif filtered_output == '[invalid]': 
                     pass 
                 
-            return True, False # else, return best guess
+            return True, False, message, panel # else, return best guess
                 
         except Exception as e: 
-            return False, None
+            return False, False, message, panel
         
     def reset_pass(self) -> None: 
         self.prompt.reset()

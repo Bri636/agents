@@ -1,7 +1,8 @@
 """ Reasoner that uses Two agents: world model agent and action agent to reason through a problem """
 
 from __future__ import annotations
-from typing import Callable, Any, Tuple
+from typing import Callable, Any, Tuple, Optional
+from rich.panel import Panel
 
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
@@ -89,7 +90,11 @@ class WorldReasoner(BaseReasoner):
         self.question_prompt = question_prompt
         self.llm_output_filter = llm_output_filter
     
-    def generate_answer(self, idx: int, sample: dict[str, str], num_tries: int) -> Tuple[bool, bool | None]: 
+    def generate_answer(self, 
+                        idx: int, 
+                        sample: dict[str, str], 
+                        num_tries: int
+                        ) -> Tuple[bool, bool, str, Panel | None]: 
         """ 
         Performs eval on one question from GSM8K and returns if successfully parsed, 
         and if llm was correct or not
@@ -97,6 +102,7 @@ class WorldReasoner(BaseReasoner):
         question = sample['question']
         self.question_prompt.add('user', content=question)
         self.answer_prompt.add('user', content=question)
+        message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
         
         try: 
             for _ in range(num_tries): 
@@ -108,14 +114,13 @@ class WorldReasoner(BaseReasoner):
                 self.question_prompt.add('user', sub_a)
                 self.answer_prompt.add('assistant', sub_a)
             
-                if self.llm_output_filter(sub_a) == 'final_answer': 
-                    out = gsm_is_correct(idx, sub_a, sample)
-                    return True, out 
-
-            return True, False # if run out of times, assume false
+                if self.llm_output_filter(sub_a) == 'final_answer':
+                    out, message = gsm_is_correct(idx, sub_a, sample)
+                    return True, out, message, panel
+            return True, False, message, panel # if run out of times, assume false
                 
         except Exception as e: 
-            return False, None
+            return False, False, message, panel
         
     def reset_pass(self) -> None: 
         self.question_prompt.reset()

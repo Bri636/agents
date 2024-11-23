@@ -2,7 +2,7 @@ from __future__ import annotations
 
 ''' Factory functions for creating prompts, parsers, and output classes '''
 
-from typing import Union
+from typing import Union, TypeVar   
 from agents import prompt_registry
 from agents.registry import import_submodules
 from agents.prompts.base_prompt_template import BasePromptTemplate
@@ -22,3 +22,5 @@ import_submodules(__name__) # trigger import of submodules of this module so we 
     
 #     instruction = Instructions[name].value
 #     return instruction
+
+T = TypeVar('T')

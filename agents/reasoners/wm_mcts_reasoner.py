@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable, Any, Tuple
 
 from rich.panel import Panel
+import copy 
 
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
@@ -93,20 +94,22 @@ class MCTSWorldReasoner(BaseReasoner):
         Tuple[if successfully generated, and if answer was correct]
         """
         question = sample['question']
+        mcts = MCTS(question_prompt_base=self.question_prompt,
+                    answer_prompt_base=self.answer_prompt,
+                    )
+
         self.question_prompt.add('user', content=question)
         self.answer_prompt.add('user', content=question)
         # if answer was generated, and if answer was correct or not
         generated, correct = False, False
         message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
+        
         root = BTMCTSNode(state=self.question_prompt,  # state is original question
                           action=None,
                           reward=None,
                           parent=None,
                           is_terminal=False
                           )
-        mcts = MCTS(question_prompt=self.question_prompt,
-                    answer_prompt=self.answer_prompt,
-                    )
 
         try:
             answer, optimal_path, panel = mcts.guess_answer(root=root,
@@ -117,7 +120,6 @@ class MCTSWorldReasoner(BaseReasoner):
                                                      max_tries=num_tries,
                                                      num_children=num_children
                                                      )
-
             if self.llm_output_filter(answer) == 'final_answer':
                 correct, message = gsm_is_correct(idx, answer, sample)
 
