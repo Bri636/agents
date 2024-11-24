@@ -10,6 +10,7 @@ from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
+from agents.gsm8k.types import GSM8KProblem
 
 class WorldModel: 
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -126,6 +127,20 @@ class WorldReasoner(BaseReasoner):
     def reset_pass(self) -> None: 
         self.question_prompt.reset()
         self.answer_prompt.reset()
+        
+        
+    def batch_generate_answer(self,
+                            indices: list[int],
+                            batched_samples: list[GSM8KProblem],
+                            num_tries: int
+                            ) -> Tuple[bool, 
+                                        list[bool], 
+                                        list[str], 
+                                        list[Panel | None]
+                                        ]:
+                                
+                                
+        ...
         
     @classmethod
     def initialize(cls: Self, 

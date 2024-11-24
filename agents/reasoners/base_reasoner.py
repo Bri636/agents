@@ -35,3 +35,7 @@ class BaseReasoner:
     def initialize(cls: Self, generator: BaseLLMGenerator, llm_output_filter: Callable, **kwargs) -> Self: 
         """ Initializes a Reasoner from at least a generator and an llm_output_filter callable """
         pass
+    
+    def batch_generate_answer(self): 
+        """ Batch generated answers """
+        pass

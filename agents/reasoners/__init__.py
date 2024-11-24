@@ -5,6 +5,9 @@ from typing import TypeVar
 
 T = TypeVar('T')
 
+Chat = list[dict[str, str]]
+""" One Single Chat interaction """
+
 def register_strategy(strategy_dict, name=None):
     """Decorator to register a method as a search strategy."""
     def decorator(func):

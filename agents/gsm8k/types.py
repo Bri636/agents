@@ -6,12 +6,7 @@ from typing import TypeVar, TypedDict
 
 class GSM8KProblem(TypedDict):
     """ 
-    Question Type for GSM8K 
-    
-    Dict({
-        'question': ..., 
-        'answer': ...
-    })
+    Dictionary that stores a problem for GSM8K 
     
     :param question: str question
     :param answer: str answer

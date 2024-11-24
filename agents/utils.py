@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 from typing import TypeVar
 from typing import Union
-from typing import TypeVar 
+from typing import TypeVar, List, Tuple
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel
@@ -122,6 +122,35 @@ def batch_data(data: list[T], chunk_size: int) -> list[list[T]]:
     if len(data) > chunk_size * len(batches):
         batches.append(data[len(batches) * chunk_size :])
     return batches
+
+def batch_data_with_indices(
+    data: List[T], indices: List[int], chunk_size: int
+) -> Tuple[List[List[T]], List[List[int]]]:
+    """
+    Batch data and indices into chunks of size chunk_size.
+
+    Parameters
+    ----------
+    data : list[T]
+        The data to batch.
+    indices : list[int]
+        The indices corresponding to the data.
+    chunk_size : int
+        The size of each batch.
+
+    Returns
+    -------
+    tuple[list[list[T]], list[list[int]]]
+        A tuple where the first list contains the batched data and the second list contains the batched indices.
+    """
+    batched_data = []
+    batched_indices = []
+
+    for i in range(0, len(data), chunk_size):
+        batched_data.append(data[i:i + chunk_size])
+        batched_indices.append(indices[i:i + chunk_size])
+
+    return batched_data, batched_indices
 
 
 def calculate_returns(rewards: Tensor, gamma: float) -> Tensor:
