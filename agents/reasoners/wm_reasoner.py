@@ -3,6 +3,7 @@
 from __future__ import annotations
 from typing import Callable, Any, Tuple, Optional, Self
 from rich.panel import Panel
+import copy
 
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.generators import BaseLLMGenerator
@@ -138,8 +139,26 @@ class WorldReasoner(BaseReasoner):
                                         list[str], 
                                         list[Panel | None]
                                         ]:
-                                
-                                
+        """ Batched generation for WM Strategy """
+        
+        batch_size = len(batched_samples)
+        questions: list[str] = [sample['question'] 
+                                for sample in batched_samples]
+        
+        question_prompts: list[BasePromptTemplate] = [
+            copy.deepcopy()
+        ]
+        answer_prompts: list[BasePromptTemplate] = ...
+        
+        
+        prompts: list[BasePromptTemplate] = [copy.deepcopy(self.prompt)
+                                             for _ in range(batch_size)]
+        
+        try: 
+            ...
+            
+        except: 
+            ...
         ...
         
     @classmethod
