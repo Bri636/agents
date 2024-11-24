@@ -1,7 +1,7 @@
 """ MCTS Reasoner that uses Two agents: world model agent and action agent to reason through a problem """
 
 from __future__ import annotations
-from typing import Callable, Any, Tuple
+from typing import Callable, Any, Tuple, Self
 
 from rich.panel import Panel
 import copy 
@@ -10,8 +10,10 @@ from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
+from agents.mcts import T
 from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 
@@ -67,6 +69,7 @@ class Actor:
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
+@BaseReasoner.register(name='mcts_world_model')
 class MCTSWorldReasoner(BaseReasoner):
 
     def __init__(self,
@@ -128,3 +131,17 @@ class MCTSWorldReasoner(BaseReasoner):
 
         except Exception as e:
             return generated, correct, message, panel
+
+    @classmethod
+    def initialize(cls: Self, 
+                   generator: BaseLLMGenerator, 
+                   filter_output_func: Callable = filter_output_type
+                   ) -> Self:
+        
+        question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
+        answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
+        
+        return cls(generator, 
+                   answer_prompt=answer_prompt, 
+                   question_prompt=question_prompt, 
+                   llm_output_filter=filter_output_func)

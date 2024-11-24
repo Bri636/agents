@@ -1,9 +1,10 @@
 """ Reasoner that uses Two agents: world model agent and action agent to reason through a problem """
 
 from __future__ import annotations
-from typing import Callable, Any, Tuple, Optional
+from typing import Callable, Any, Tuple, Optional, Self
 from rich.panel import Panel
 
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
@@ -74,7 +75,7 @@ class Actor:
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate): 
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
         
-        
+@BaseReasoner.register(name='world_model')    
 class WorldReasoner(BaseReasoner): 
     
     def __init__(self, 
@@ -126,44 +127,16 @@ class WorldReasoner(BaseReasoner):
         self.question_prompt.reset()
         self.answer_prompt.reset()
         
+    @classmethod
+    def initialize(cls: Self, 
+                   generator: BaseLLMGenerator, 
+                   filter_output_func: Callable = filter_output_type
+                   ) -> Self:
         
-if __name__=="__main__": 
-    import random
-    from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
-    from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-    from agents.gsm8k.utils import read_jsonl
-    from tqdm import tqdm
-    
-    dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    
-    # cfg = ArgoGeneratorConfig()
-    cfg = VLLMGeneratorConfig()
-    # generator = LangChainFSLGenerator(cfg)
-    generator = VLLMGenerator(cfg)
-    question_prompt = GSMLlamaPromptTemplate('question')
-    answer_prompt = GSMLlamaPromptTemplate('answer')
-    
-    reasoner = WorldReasoner(generator, answer_prompt, question_prompt)
-    num_samples = 30
-    num_tries = 10
-    
-    sample_idx = random.sample(range(len(dataset)), num_samples)
-    samples = [dataset[i] for i in sample_idx]
-    
-    num_correct = 0
-    num_completed = 0
-    for idx, sample in tqdm(enumerate(samples)): 
-        finished, correct = reasoner.generate_answer(idx, sample, num_tries)
-        num_correct += finished and correct
-        num_completed += finished
-        reasoner.reset_pass()
-
-        print(f'\nCorrect: {num_correct}')
-    breakpoint()
-    percent_completed = (num_completed / num_samples) * 100
-    percent_correct = (num_correct / num_completed) * 100
+        question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
+        answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
         
-    print(f'Percent Completed: {percent_completed}\nPercent Correct: {percent_correct}')
-    
-    breakpoint()
+        return cls(generator, 
+                   question_prompt=question_prompt, 
+                   answer_prompt=answer_prompt, 
+                   llm_output_filter=filter_output_func)

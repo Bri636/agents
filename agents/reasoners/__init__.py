@@ -1,6 +1,9 @@
 """ Reasoners for GSM """
 
 from __future__ import annotations
+from typing import TypeVar
+
+T = TypeVar('T')
 
 def register_strategy(strategy_dict, name=None):
     """Decorator to register a method as a search strategy."""
@@ -10,13 +13,4 @@ def register_strategy(strategy_dict, name=None):
         return func
     return decorator
 
-class ReasonerStrategies:
-    """ Class interface for interacting with sub_reasoners """ 
-    strategies = {}
-    
-    def __init__(self) -> None:
-        pass
-    
-    @classmethod
-    def execute_strategy(self):
-        ...
+

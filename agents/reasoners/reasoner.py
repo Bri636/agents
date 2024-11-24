@@ -9,9 +9,12 @@ from agents.utils import BaseConfig
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.generators import BaseLLMGenerator
 from agents.prompts import BasePromptTemplate
-
 from agents.gsm8k import GSM8KProblem
-    
+from agents.prompts.standard_prompt import StandardGSMPromptTemplate
+
+from agents.reasoners import T
+
+@BaseReasoner.register(name='base')
 class LLMReasoner(BaseReasoner): 
     """ Base LLM Class for one-shot reasoning """
     def __init__(self, 
@@ -68,44 +71,12 @@ class LLMReasoner(BaseReasoner):
     def reset_pass(self) -> None: 
         self.prompt.reset()
         
-        
-if __name__=="__main__": 
-    import random
-    from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
-    from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-    from agents.prompts.standard_prompt import StandardGSMPromptTemplate
-    from agents.gsm8k.utils import read_jsonl
-    from tqdm import tqdm
+    @classmethod
+    def initialize(cls: T, 
+                   generator: BaseLLMGenerator, 
+                   filter_output_func: Callable = filter_output_type
+                   ) -> T:
+        prompt = StandardGSMPromptTemplate()
+        return cls(generator, prompt, filter_output_func)
     
-    dataset = read_jsonl('/homes/bhsu/2024_research/agents/agents/data/gsm.jsonl')
-    
-    # cfg = ArgoGeneratorConfig()
-    cfg = VLLMGeneratorConfig()
-    # generator = LangChainFSLGenerator(cfg)
-    generator = VLLMGenerator(cfg)
-    prompt = StandardGSMPromptTemplate()
-    
-    reasoner = LLMReasoner(generator, prompt, filter_output_type)
-    num_samples = 30
-    num_tries = 10
-    
-    sample_idx = random.sample(range(len(dataset)), num_samples)
-    samples = [dataset[i] for i in sample_idx]
-    
-    num_correct = 0
-    num_completed = 0
-    for idx, sample in tqdm(enumerate(samples)): 
-        finished, correct = reasoner.generate_answer(idx, sample, num_tries)
-        num_correct += finished and correct
-        num_completed += finished
-        reasoner.reset_pass()
-
-        print(f'\nCorrect: {num_correct}')
-    percent_completed = (num_completed / num_samples) * 100
-    percent_correct = (num_correct / num_completed) * 100
-        
-    print(f'Percent Completed: {percent_completed}\nPercent Correct: {percent_correct}')
-    # final_answer = reasoner.generate_answer(num_tries=10, sample=samples[0])
-
-    breakpoint()
     
