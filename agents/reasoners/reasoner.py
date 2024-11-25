@@ -115,7 +115,7 @@ class LLMReasoner(BaseReasoner):
                 ):
                     if filtered_output == 'final_answer': 
                         correct, message = gsm_is_correct(sample_idx, llm_outputs[idx], sample)
-                        inputs[idx][-1] = correct # set inputs idx to result 
+                        inputs[idx][-1] = correct # we set to correct since we dont use history buffer and can just re-eval
                         messages[idx] = message # set message to correct message
                         corrects[idx] = correct # set sample idx to correct result
                         prompt.reset()

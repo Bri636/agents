@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable, Any, Tuple, Self
 
 from rich.panel import Panel
-import copy 
+import copy
 
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
@@ -13,9 +13,11 @@ from agents.prompts import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
+from agents.gsm8k.types import GSM8KProblem
 from agents.mcts import T
 from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -69,6 +71,7 @@ class Actor:
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
+
 @BaseReasoner.register(name='mcts_world_model')
 class MCTSWorldReasoner(BaseReasoner):
 
@@ -86,10 +89,10 @@ class MCTSWorldReasoner(BaseReasoner):
         self.question_prompt = question_prompt
         self.llm_output_filter = llm_output_filter
 
-    def generate_answer(self, 
-                        idx: int, 
-                        sample: dict[str, str], 
-                        num_tries: int, 
+    def generate_answer(self,
+                        idx: int,
+                        sample: dict[str, str],
+                        num_tries: int,
                         num_children: int = 3
                         ) -> Tuple[bool, bool, str, Panel | None]:
         """ 
@@ -106,7 +109,7 @@ class MCTSWorldReasoner(BaseReasoner):
         # if answer was generated, and if answer was correct or not
         generated, correct = False, False
         message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
-        
+
         root = BTMCTSNode(state=self.question_prompt,  # state is original question
                           action=None,
                           reward=None,
@@ -116,13 +119,83 @@ class MCTSWorldReasoner(BaseReasoner):
 
         try:
             answer, optimal_path, panel = mcts.guess_answer(root=root,
-                                                     actor=self.actor,
-                                                     world_model=self.world_model,
-                                                     sample=sample,
-                                                     sample_idx=idx,
-                                                     max_tries=num_tries,
-                                                     num_children=num_children
-                                                     )
+                                                            actor=self.actor,
+                                                            world_model=self.world_model,
+                                                            sample=sample,
+                                                            sample_idx=idx,
+                                                            max_tries=num_tries,
+                                                            num_children=num_children
+                                                            )
+            if self.llm_output_filter(answer) == 'final_answer':
+                correct, message = gsm_is_correct(idx, answer, sample)
+
+            generated = True
+            return generated, correct, message, panel
+
+        except Exception as e:
+            return generated, correct, message, panel
+
+    def batch_generate_answer(self,
+                              indices: list[int],
+                              batched_samples: list[GSM8KProblem],
+                              num_tries: int,
+                              num_children: int = 3
+                              ) -> Tuple[bool, bool, str, Panel | None]:
+        """ 
+        Attempts to generate an answer for a sample question; it will return - 
+        Tuple[if successfully generated, and if answer was correct]
+        """
+        batch_size = len(batched_samples)
+        problems: list[str] = [sample['question']
+                               for sample in batched_samples]
+        question_prompts: list[BasePromptTemplate] = [copy.deepcopy(self.question_prompt)
+                                                      for _ in range(batch_size)]
+        answer_prompts: list[BasePromptTemplate] = [copy.deepcopy(self.answer_prompt)
+                                                    for _ in range(batch_size)]
+        # load all the problems to their prompts
+        for problem, question_prompt, answer_prompt in zip(problems,
+                                                           question_prompts,
+                                                           answer_prompts):
+            question_prompt.add(**{'role': 'user', 'content': problem})
+            answer_prompt.add(**{'role': 'user', 'content': problem})
+            
+        corrects = [False] * batch_size
+        messages, panels = [
+            f'Answer Incorrect or failed to Generate for Question :('] * batch_size, [None] * batch_size
+
+        #########
+        
+        batch_mcts = [MCTS(question_prompt_base=question_prompt, 
+                           answer_prompt_base=answer_prompt)
+                      for question_prompt, answer_prompt 
+                      in zip(question_prompts, answer_prompts)]
+
+        mcts = MCTS(question_prompt_base=self.question_prompt,
+                    answer_prompt_base=self.answer_prompt,
+                    )
+
+        self.question_prompt.add('user', content=question)
+        self.answer_prompt.add('user', content=question)
+        # if answer was generated, and if answer was correct or not
+        generated, correct = False, False
+        message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
+
+        root = BTMCTSNode(state=self.question_prompt,  # state is original question
+                          action=None,
+                          reward=None,
+                          parent=None,
+                          is_terminal=False
+                          )
+
+        try:
+            answer, optimal_path, panel = mcts.guess_answer(root=root,
+                                                            actor=self.actor,
+                                                            world_model=self.world_model,
+                                                            sample=sample,
+                                                            sample_idx=idx,
+                                                            max_tries=num_tries,
+                                                            num_children=num_children
+                                                            )
             if self.llm_output_filter(answer) == 'final_answer':
                 correct, message = gsm_is_correct(idx, answer, sample)
 
@@ -133,15 +206,15 @@ class MCTSWorldReasoner(BaseReasoner):
             return generated, correct, message, panel
 
     @classmethod
-    def initialize(cls: Self, 
-                   generator: BaseLLMGenerator, 
+    def initialize(cls: Self,
+                   generator: BaseLLMGenerator,
                    filter_output_func: Callable = filter_output_type
                    ) -> Self:
-        
+
         question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
         answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
-        
-        return cls(generator, 
-                   answer_prompt=answer_prompt, 
-                   question_prompt=question_prompt, 
+
+        return cls(generator,
+                   answer_prompt=answer_prompt,
+                   question_prompt=question_prompt,
                    llm_output_filter=filter_output_func)

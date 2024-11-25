@@ -13,9 +13,8 @@ from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.gsm8k.types import GSM8KProblem
 
-PromptItem = list[Tuple[BasePromptTemplate, BasePromptTemplate], bool]
+PromptItem = list[BasePromptTemplate, BasePromptTemplate, bool]
 """ Item in Batch - [QUESTION_PROMPT, ANSWER_PROMPT, IF_CORRECT] """
-
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -215,43 +214,70 @@ class WorldReasoner(BaseReasoner):
         messages, panels = [
             f'Answer Incorrect or failed to Generate for Question :('] * batch_size, [None] * batch_size
 
-        batch_prompts: list[PromptItem] = [[(question_prompt, answer_prompt), False] # bool for it problem is correct
+        batch_prompts: list[PromptItem] = [[question_prompt, answer_prompt, False] # bool for it problem reached final answer or not
                                           for question_prompt, answer_prompt
                                           in zip(question_prompts, answer_prompts)]
-
         try:
+            # for _ in range(num_tries):
+            #     # filter out for prompts we still need to do - aka True
+            #     filtered_prompts: list[PromptItem] = list(filter(lambda item: not item[-1], batch_prompts))
+            #     breakpoint()
+            #     # batch output
+            #     batch_out = self.batch_step(filtered_prompts)
+            #     sub_questions, sub_answers = batch_out['responses'] # list[str] responses
+            #     question_prompt, answer_prompt = batch_out['prompts'] # prompts with chat history updated
+            #     # evaluate the filtered answers
+            #     filtered_answers: list[str] = [self.llm_output_filter(sub_answer)
+            #                                    for sub_answer in sub_answers]
+            #     for idx, (filtered_answer, prompt, sample, sample_idx) in enumerate(
+            #         zip(filtered_answers, batch_prompts, batched_samples, indices)
+            #     ):
+            #         if filtered_answer == 'final_answer':
+            #             breakpoint()
+            #             correct, message = gsm_is_correct(
+            #                 sample_idx, sub_answers[idx], sample)
+            #             batch_prompts[idx][-1] = True  # mark batch item as done; aka dont eval it more if it already gave a final answer
+            #             # set message to correct message
+            #             messages[idx] = message
+            #             # set sample idx to correct result
+            #             corrects[idx] = correct
+            #             self.batch_reset(batch_prompts)
+                        
+            #     # if all of them were correct, leave for loop early 
+            #     if all([prompt[-1] for prompt in batch_prompts]): 
+            #         break
             for _ in range(num_tries):
-                # filter out for prompts we still need to do - aka True
-                filtered_prompts: list[PromptItem] = list(
-                    filter(lambda item: not item[-1], batch_prompts))
-                # batch output
+                # Get indices and prompts that are not yet completed
+                filtered_indices = [i for i, item in enumerate(batch_prompts) if not item[-1]]
+                filtered_prompts = [batch_prompts[i] for i in filtered_indices]
+                # Proceed only if there are prompts left to process
+                if not filtered_prompts:
+                    break
+
+                # Batch output
                 batch_out = self.batch_step(filtered_prompts)
-                sub_questions, sub_answers = batch_out['responses'] # list[str] responses
-                question_prompt, answer_prompt = batch_out['prompts'] # prompts with chat history updated
-                # evaluate the filtered answers
-                filtered_answers: list[str] = [self.llm_output_filter(sub_answer)
-                                               for sub_answer in sub_answers]
-                for idx, (filtered_answer, prompt, sample, sample_idx) in enumerate(
-                    zip(filtered_answers, batch_prompts, batched_samples, indices)
-                ):
+                sub_questions, sub_answers = batch_out['responses']
+                question_prompt, answer_prompt = batch_out['prompts']
+
+                # Evaluate the filtered answers
+                for idx, batch_idx in enumerate(filtered_indices):
+                    filtered_answer = self.llm_output_filter(sub_answers[idx])
                     if filtered_answer == 'final_answer':
                         correct, message = gsm_is_correct(
-                            sample_idx, answer_prompt[idx], sample)
-                        batch_prompts[idx][-1] = correct  # mark batch item as correct
-                        # set message to correct message
-                        messages[idx] = message
-                        # set sample idx to correct result
-                        corrects[idx] = correct
-                        self.batch_reset(batch_prompts)
-                        
-                # if all of them were correct, leave for loop early 
-                if all([prompt[-1] for prompt in batch_prompts]): 
+                            indices[batch_idx], sub_answers[idx], batched_samples[batch_idx])
+                        batch_prompts[batch_idx][-1] = True
+                        messages[batch_idx] = message
+                        corrects[batch_idx] = correct
+                        self.batch_reset([batch_prompts[batch_idx]])
+
+                # Break if all prompts are completed
+                if all([prompt[-1] for prompt in batch_prompts]):
                     break
-            
+
             return True, corrects, messages, panels  # else, return best guess
 
         except Exception as e:
-            messages = [f'Failed to generate due to this error: {e}\n'] * batch_size
+            messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
             return False, [False] * batch_size, messages, panels # else, False and drop batch 
 
     @classmethod

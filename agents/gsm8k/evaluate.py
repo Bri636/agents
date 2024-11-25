@@ -18,6 +18,7 @@ from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.prompts.standard_prompt import StandardGSMPromptTemplate
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.reasoners.reasoner import LLMReasoner
+from agents.reasoners.wm_reasoner import WorldReasoner
 from agents.utils import BaseConfig, register_strategy
 # import types
 from agents.gsm8k import T
@@ -114,7 +115,7 @@ def batch_gsm_evaluate(
     seed: int = 10,
     disable_tqdm: bool = True,
     num_samples: int = 100,
-    batch_size: int = 4,
+    batch_size: int = 32,
     num_tries: int = 10
 ) -> Metrics:
     """ Performs batched evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
@@ -202,9 +203,10 @@ if __name__ == "__main__":
     reasoner_registry: dict[str, BaseReasoner] = BaseReasoner.registry
     generator_cfg = VLLMGeneratorConfig()
     generator = VLLMGenerator(generator_cfg)
-    name, reasoner = list(reasoner_registry.items())[0]
-    reasoner = reasoner.initialize(generator, filter_output_type)
 
+    name, reasoner = list(reasoner_registry.items())[1]
+    reasoner = reasoner.initialize(generator, filter_output_type)
+    breakpoint()
     outputs = gsm_eval(dataset=dataset, strategy=name, reasoner=reasoner)
     breakpoint()
     reasoners = [(name, reasoner.initialize(generator, filter_output_type))
