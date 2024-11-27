@@ -200,3 +200,7 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         # Update the current prompt and history
         self._history.extend(swapped_history)
         self._prompt.extend(swapped_history)
+        
+        
+    def inject_strategy(): 
+        ...

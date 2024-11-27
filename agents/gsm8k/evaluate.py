@@ -45,10 +45,10 @@ class GSMEvaluationConfig:
     dataset_path: str = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
     seed: int = 10
     disable_tqdm: bool = True
-    num_samples: int = 32
+    num_samples: int = 7456
     num_tries: int = 10
-    batch_size: int = 4
-
+    batch_size: int = 32
+ # 64: 7488
 
 def gsm_evaluate(
     strategy: str,
@@ -188,8 +188,11 @@ if __name__ == "__main__":
     from agents.generators.argo_chat_generator import LangChainFSLGenerator, ArgoGeneratorConfig
     from agents.gsm8k.utils import batch_sample_gsm, filter_output_type, gsm_is_correct
     import pprint as pp
+    from agents.utils import configure_logger
 
     from functools import partial
+    
+    logger = configure_logger(level='info')
 
     config = GSMEvaluationConfig()
     dataset = read_jsonl(config.dataset_path)
@@ -204,7 +207,7 @@ if __name__ == "__main__":
     generator_cfg = VLLMGeneratorConfig()
     generator = VLLMGenerator(generator_cfg)
 
-    name, reasoner = list(reasoner_registry.items())[1]
+    name, reasoner = list(reasoner_registry.items())[2]
     reasoner = reasoner.initialize(generator, filter_output_type)
     breakpoint()
     outputs = gsm_eval(dataset=dataset, strategy=name, reasoner=reasoner)
@@ -218,5 +221,5 @@ if __name__ == "__main__":
                                        for (name, reasoner) in reasoners]
 
     import pprint as pp
-    pp.pprint(outputs)
+    logger.log(pp.pprint(outputs))
     breakpoint()

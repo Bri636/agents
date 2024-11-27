@@ -44,19 +44,15 @@ class WorldModel:
         return {'text': sub_answer['text'][0],
                 'log_probs': sub_answer['log_probs'],
                 }
-
-    def is_terminal(self):
-        ...
-
-    def _generate_reward(self):
-        """ Generates the reward for an action """
-
-    def _generate_next_state(self):
-        """ Generates the next state in the environment for an action """
-
-    def reset(self):
-        """ Resets the environment to its original state"""
-        ...
+        
+    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict]:
+        """ Batch generates the next state with log probabilities """
+        assert isinstance(self.generator, VLLMGenerator), f"""
+        LogProbs only supported with VLLM for now...
+        """
+        answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
+        sub_answers = self.generator.generate_with_logprobs(answer_inputs)
+        return [{'text': ans['text'][0], 'log_probs': ans['log_probs']} for ans in sub_answers]
 
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
@@ -218,34 +214,6 @@ class WorldReasoner(BaseReasoner):
                                           for question_prompt, answer_prompt
                                           in zip(question_prompts, answer_prompts)]
         try:
-            # for _ in range(num_tries):
-            #     # filter out for prompts we still need to do - aka True
-            #     filtered_prompts: list[PromptItem] = list(filter(lambda item: not item[-1], batch_prompts))
-            #     breakpoint()
-            #     # batch output
-            #     batch_out = self.batch_step(filtered_prompts)
-            #     sub_questions, sub_answers = batch_out['responses'] # list[str] responses
-            #     question_prompt, answer_prompt = batch_out['prompts'] # prompts with chat history updated
-            #     # evaluate the filtered answers
-            #     filtered_answers: list[str] = [self.llm_output_filter(sub_answer)
-            #                                    for sub_answer in sub_answers]
-            #     for idx, (filtered_answer, prompt, sample, sample_idx) in enumerate(
-            #         zip(filtered_answers, batch_prompts, batched_samples, indices)
-            #     ):
-            #         if filtered_answer == 'final_answer':
-            #             breakpoint()
-            #             correct, message = gsm_is_correct(
-            #                 sample_idx, sub_answers[idx], sample)
-            #             batch_prompts[idx][-1] = True  # mark batch item as done; aka dont eval it more if it already gave a final answer
-            #             # set message to correct message
-            #             messages[idx] = message
-            #             # set sample idx to correct result
-            #             corrects[idx] = correct
-            #             self.batch_reset(batch_prompts)
-                        
-            #     # if all of them were correct, leave for loop early 
-            #     if all([prompt[-1] for prompt in batch_prompts]): 
-            #         break
             for _ in range(num_tries):
                 # Get indices and prompts that are not yet completed
                 filtered_indices = [i for i, item in enumerate(batch_prompts) if not item[-1]]

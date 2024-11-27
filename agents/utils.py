@@ -178,62 +178,32 @@ def calculate_returns(rewards: Tensor, gamma: float) -> Tensor:
     return returns[:, 0]  # Return the first return G_0 for each episode
 
 
-# def configure_logger(level: str = 'info',
-#                      logging_save_path: Optional[str] = None,
-#                      rank: Optional[int] = None
-#                      ) -> logging.Logger:
-#     """Configure a logger to write logs and print statements to a file."""
+def configure_logger(level: str = 'debug',
+                     logging_save_path: Optional[str] = None,
+                     rank: Optional[int] = None) -> logging.Logger:
+    """Function for creating a logger to write only to a file."""
 
-#     LEVELS = {
-#         'debug': logging.DEBUG,
-#         'info': logging.INFO,
-#         'warning': logging.WARNING,
-#         'error': logging.ERROR,
-#         'critical': logging.CRITICAL
-#     }
+    LEVELS = {
+        'debug': logging.DEBUG,
+        'info': logging.INFO,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+        'critical': logging.CRITICAL
+    }
 
-#     # Determine the logger name
-#     logger_name = f'Logger: {rank}' if rank is not None else 'Logger'
+    # Determine the logger name
+    logger_name = f'Logger: {rank}' if rank is not None else 'Logger'
 
-#     # Create a logger instance
-#     logger = logging.getLogger(logger_name)
-#     logger.setLevel(LEVELS.get(level.lower(), logging.DEBUG))  # Set the logging level
+    # Create a logger instance
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(LEVELS.get(level, logging.DEBUG))  # Set the logging level
 
-#     # Clear existing handlers
-#     logger.handlers.clear()
+    # Clear existing handlers
+    logger.handlers.clear()
 
-#     # Create a logging formatter
-#     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-#     # Add file handler if path is provided
-#     if logging_save_path:
-#         file_handler = logging.FileHandler(logging_save_path)
-#         file_handler.setFormatter(formatter)
-#         logger.addHandler(file_handler)
-
-#     # Redirect stdout and stderr to the logger
-#     class StreamToLogger:
-#         """
-#         Fake file-like stream object that redirects writes to a logger instance.
-#         """
-#         def __init__(self, logger, log_level):
-#             self.logger = logger
-#             self.log_level = log_level
-#             self.buffer = ''
-
-#         def write(self, message):
-#             if message != '\n':
-#                 self.buffer += message
-#             if '\n' in message:
-#                 self.flush()
-
-#         def flush(self):
-#             if self.buffer:
-#                 self.logger.log(self.log_level, self.buffer.strip())
-#                 self.buffer = ''
-
-#     # Replace sys.stdout and sys.stderr with our stream to logger
-#     sys.stdout = StreamToLogger(logger, logging.INFO)
-#     sys.stderr = StreamToLogger(logger, logging.ERROR)
-
-#     return logger
+    # Add file handler if path is provided
+    if logging_save_path:
+        file_handler = logging.FileHandler(logging_save_path)
+        logger.addHandler(file_handler)
+    
+    return logger
