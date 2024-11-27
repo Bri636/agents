@@ -189,15 +189,15 @@ if __name__ == "__main__":
     from agents.gsm8k.utils import batch_sample_gsm, filter_output_type, gsm_is_correct
     import pprint as pp
     from agents.utils import configure_logger
-
+    import pprint as pp
     from functools import partial
     
-    logger = configure_logger(level='info')
+    logger = configure_logger(level='info', logging_save_path='./mcts_single.log')
 
     config = GSMEvaluationConfig()
     dataset = read_jsonl(config.dataset_path)
 
-    gsm_eval = partial(batch_gsm_evaluate,
+    gsm_eval = partial(gsm_evaluate,
                        seed=config.seed,
                        disable_tqdm=config.disable_tqdm,
                        num_samples=config.num_samples,
@@ -209,9 +209,9 @@ if __name__ == "__main__":
 
     name, reasoner = list(reasoner_registry.items())[2]
     reasoner = reasoner.initialize(generator, filter_output_type)
-    breakpoint()
+
     outputs = gsm_eval(dataset=dataset, strategy=name, reasoner=reasoner)
-    breakpoint()
+
     reasoners = [(name, reasoner.initialize(generator, filter_output_type))
                  for name, reasoner in reasoner_registry.items()]
     # TODO: FIX WM REASONER
@@ -220,6 +220,4 @@ if __name__ == "__main__":
                                                 reasoner=reasoner)
                                        for (name, reasoner) in reasoners]
 
-    import pprint as pp
-    logger.log(pp.pprint(outputs))
-    breakpoint()
+    logger.log(pp.pformat(outputs))
