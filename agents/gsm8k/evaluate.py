@@ -19,6 +19,7 @@ from agents.prompts.standard_prompt import StandardGSMPromptTemplate
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.reasoners.reasoner import LLMReasoner
 from agents.reasoners.wm_reasoner import WorldReasoner
+from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
 from agents.utils import BaseConfig, register_strategy
 # import types
 from agents.gsm8k import T
@@ -147,6 +148,7 @@ Num_samples is not divisible by batch_size !'''
 
         for batch_idx, (batch, indices) in enumerate(zip(batched_samples, batch_indices)):
             finished, corrects, messages, panels = reasoner.batch_generate_answer(indices, batch, num_tries)
+            breakpoint()
             if finished: 
                 num_correct += sum(corrects)
                 num_batches_completed += 1  # Fixed increment
@@ -194,10 +196,10 @@ if __name__ == "__main__":
     
     logger = configure_logger(level='info', logging_save_path='./mcts_single.log')
 
-    config = GSMEvaluationConfig()
+    config = GSMEvaluationConfig(batch_size=4)
     dataset = read_jsonl(config.dataset_path)
 
-    gsm_eval = partial(gsm_evaluate,
+    gsm_eval = partial(batch_gsm_evaluate,
                        seed=config.seed,
                        disable_tqdm=config.disable_tqdm,
                        num_samples=config.num_samples,
@@ -211,13 +213,13 @@ if __name__ == "__main__":
     reasoner = reasoner.initialize(generator, filter_output_type)
 
     outputs = gsm_eval(dataset=dataset, strategy=name, reasoner=reasoner)
+    breakpoint()
+    # reasoners = [(name, reasoner.initialize(generator, filter_output_type))
+    #              for name, reasoner in reasoner_registry.items()]
+    # # TODO: FIX WM REASONER
+    # outputs: list[dict[str, float]] = [gsm_eval(dataset=dataset,
+    #                                             strategy=name,
+    #                                             reasoner=reasoner)
+    #                                    for (name, reasoner) in reasoners]
 
-    reasoners = [(name, reasoner.initialize(generator, filter_output_type))
-                 for name, reasoner in reasoner_registry.items()]
-    # TODO: FIX WM REASONER
-    outputs: list[dict[str, float]] = [gsm_eval(dataset=dataset,
-                                                strategy=name,
-                                                reasoner=reasoner)
-                                       for (name, reasoner) in reasoners]
-
-    logger.log(pp.pformat(outputs))
+    logger.info(pp.pformat(outputs))

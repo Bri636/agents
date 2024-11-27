@@ -19,6 +19,7 @@ from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.gsm_llama_prompts import BASE, QUESTION, ANSWER
 from agents.gsm8k.utils import read_jsonl
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
 class GSM8kPromptDict(TypedDict):
     """ Stores the Components for the Prompt """
@@ -57,6 +58,39 @@ def parse_base(text: str) -> list[dict[str, str]]:
         chat_messages.append({'role': role, 'content': clean_content})
     
     return chat_messages
+
+def extract_question_idx(content: str) -> Optional[int]:
+    """Extracts the question number from a given string."""
+    match = re.search(r"Question (\d+):", content)
+    if match:
+        return int(match.group(1))
+    return None
+
+def format_prompt_messages(messages: List[PromptMessage]) -> str:
+    """Formats a list of PromptMessage objects into the desired structured output."""
+    output = []
+    idx = None
+    answer_guess_section = []
+
+    for i, message in enumerate(messages):
+        if message.role == 'user' and idx is None:
+            # Extract question index from the first user message
+            idx = extract_question_idx(message.content)
+        
+        if message.role == 'user':
+            if i == 0:  # First user message is the math problem
+                output.append(f"user:\n** Math Problem **\nQuestion {idx}: {message.content.split(':', 1)[1].strip()}")
+            else:  # Subsequent user messages are part of Answer Guess
+                answer_guess_section.append(message.content)
+        elif message.role == 'assistant':
+            # Assistant content gets integrated into the answer guess
+            answer_guess_section.append(message.content)
+
+    # Combine all answer guesses into one structured section
+    if answer_guess_section:
+        output.append(f"user:\n** Answer Guess **\n" + "\n".join(answer_guess_section))
+
+    return "\n\n".join(output)
 
 class GSMStrategyPromptTemplate(BasePromptTemplate):
     """Question-Answer Prompt Template for Llama."""
@@ -103,6 +137,10 @@ The reason why your question was wrong was because your final answer was not out
 
 ** Strategy **
 You seem to be bad at outputing your answer in the right format. Make sure when you are giving your final answer, you put your answer in ####.
+
+user: 
+** Math Problem **
+Question {idx}: Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?
 
 user:
 ** Answer Guess **
@@ -212,14 +250,30 @@ Carefully read and interpret the problem to ensure you understand key relationsh
         self._history.extend(swapped_history)
         self._prompt.extend(swapped_history)
         
-    def add_reasoning_trace(self, path: list[BTMCTSNode]) -> None: 
+        
+    def add_eval(self, prompt: GSMLlamaPromptTemplate, sample: dict[str, str], correct: bool) -> None: 
         """ Adds the prompt from the leaf node of the optimal path """
-        leaf = path[-1]
+        
+        
+        ...
         
         
 if __name__=="__main__": 
     
-    
+# Question 1.1: How many clips did Natalia sell in May?
+# Answer 1.1: Natalia sold 48 clips in April and half as many clips in May, so she sold 48 / 2 = 24 clips in May. The answer is 48.
+# Question 1.2: Now we can answer the question: How many clips did Natalia sell altogether in April and May?
+# Answer 1.2: Natalia sold 48 clips in April and 24 clips in May, so altogether she sold 48 + 24 = 72 clips. The answer is 72 clips.
+    question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
+    question_prompt.add(**{'role': 'user', 'content': 'Question 1: Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?'})
+    question_prompt.add(**{'role': 'assistant', 'content': 'Question 1.1: How many clips did Natalia sell in May?'})
+    question_prompt.add(**{'role': 'user', 'content': 'Answer 1.1: Natalia sold 48 clips in April and half as many clips in May, so she sold 48 / 2 = 24 clips in May. The answer is 48.'})
+    question_prompt.add(**{'role': 'assistant', 'content': 'Question 1.2: Now we can answer the question: How many clips did Natalia sell altogether in April and May?'})
+    question_prompt.add(**{'role': 'user', 'content': 'Answer 1.2: Natalia sold 48 clips in April and 24 clips in May, so altogether she sold 48 + 24 = 72 clips. The answer is 72 clips.'})
+    breakpoint()
+    out = format_prompt_messages(question_prompt.history)
+    breakpoint()
     prompt = GSMStrategyPromptTemplate()
+    prompt.add_eval()
     
     breakpoint()

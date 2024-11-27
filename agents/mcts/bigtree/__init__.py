@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 from typing import TypeVar, Union, Callable
 
+from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
@@ -22,6 +23,9 @@ Question = str
 
 Computable = Union[list[float], float, int, np.ndarray]
 """ Values that are computable via function such as np.mean() """
+
+NodePath = list[BTMCTSNode]
+""" List of nodes representing a path in MCTS Tree """
 
 T = TypeVar('T')
 

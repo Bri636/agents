@@ -63,6 +63,13 @@ class Actor:
         sub_question = self.generator.generate(question_prompt.preprocess())[0]
 
         return sub_question
+    
+    def batch_act(self, question_prompts: list[BasePromptTemplate]) -> list[str]:
+        """ Batch returns the next sub_question to ask """
+        question_inputs: list[list[dict]] = [question_prompt.preprocess()
+                                             for question_prompt in question_prompts]  # each sub-list is a chat buffer
+        sub_questions = self.generator.generate(question_inputs)
+        return sub_questions
 
     def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
@@ -134,7 +141,6 @@ class MCTSWorldReasoner(BaseReasoner):
                                                             )
             if self.llm_output_filter(answer) == 'final_answer':
                 correct, message = gsm_is_correct(idx, answer, sample)
-            breakpoint()
             generated = True
             return generated, correct, message, panel
 
@@ -155,12 +161,43 @@ class MCTSWorldReasoner(BaseReasoner):
             - A list of messages for each sample.
             - A list of panels (visualizations) for each sample.
         """
-        # batch_size = len(samples)
-        # generated = [False] * batch_size
-        # correct = [False] * batch_size
-        # messages = ['Answer incorrect or failed to generate for question.'] * batch_size
-        # panels = [None] * batch_size
+        batch_size = len(samples)
+        generated = [False] * batch_size # assume false
+        correct = [False] * batch_size
+        messages = ['Answer incorrect or failed to generate for question.'] * batch_size
+        panels = [None] * batch_size
+        
+        roots = []
+        for idx in range(batch_size): 
+            # prime the prompts with the problem
+            problem: GSM8KProblem = samples[idx]['question']
+            question_prompt: BasePromptTemplate = copy.deepcopy(self.question_prompt)
+            answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
+            question_prompt.add('user', content=problem)
+            answer_prompt.add('user', content=problem)
+            
+            root = BTMCTSNode(
+                state=question_prompt,
+                action=None,
+                reward=None,
+                parent=None,
+                is_terminal=False
+            )
+            roots.append(root)
 
+        # note - we deepcopy to prevent over-writing question_prompt
+        mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt), 
+                         answer_prompt_base=copy.deepcopy(answer_prompt))
+
+        answer, optimal_path, panels = mcts.batch_guess_answer(roots, 
+                                                               self.actor, 
+                                                               self.world_model, 
+                                                               num_children=num_children, 
+                                                               samples=samples, 
+                                                               sample_indices=indices, 
+                                                               max_tries=num_tries
+                                                               )
+        breakpoint()
         # # Initialize MCTS instances and roots for each sample
         # roots = []
         # for idx in range(batch_size):

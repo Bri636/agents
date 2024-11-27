@@ -20,8 +20,10 @@ from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.reasoners.wm_reasoner import WorldModel, Actor
 from agents.mcts.bigtree.mcts_utils import SearchStrategies
-from agents.mcts.bigtree import Prompt, Computable
-
+from agents.mcts.bigtree import Prompt, Computable, NodePath
+from agents.gsm8k import GSM8KProblem
+from agents.prompts.base_prompt_template import BasePromptTemplate
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
 def win_lose(win: bool,
              win_reward: float = 100,
@@ -155,7 +157,7 @@ class BatchMCTS:
         return paths
 
     def batch_expand(self,
-                     nodes: list[BTMCTSNode],
+                     leaf_nodes: list[BTMCTSNode],
                      actor: Actor,
                      world_model: WorldModel,
                      num_children: int,
@@ -166,11 +168,64 @@ class BatchMCTS:
         """
         Expands a list of nodes into their children and updates the nodes' internal children attributes.
         """
+        # Initialize lists to hold prompts and references
+        question_prompts: list[Prompt] = []
+        answer_prompts: list[Prompt] = []
+        node_refs: list[BTMCTSNode] = []
+        sample_refs: list[int] = []
+        sample_idx_refs: list[int] = []
+        node_to_children = {node: [] for node in leaf_nodes}
+
+        for idx, node in enumerate(leaf_nodes):
+            # Copy prompt history from node state
+            self._question_prompt_base.copy_history(node.state)
+            self._answer_prompt_base.copy_history(node.state)
+            # for each node - copy the prompt base into its children
+            for _ in range(num_children):
+                # Create copies of the prompts for each child
+                question_prompt = copy.deepcopy(self._question_prompt_base)
+                answer_prompt = copy.deepcopy(self._answer_prompt_base)
+                question_prompts.append(question_prompt)
+                answer_prompts.append(answer_prompt)
+                # appending node and index references 
+                node_refs.append(node)
+                sample_refs.append(samples[idx])
+                sample_idx_refs.append(sample_indices[idx])
+            # reset it per node so we do not copy multiple questions
+            self._question_prompt_base.reset()
+            self._answer_prompt_base.reset()
+
+        # NOTE - len(question_prompts) = len(leaf_nodes) * num_children
+        # Generate sub_questions in batch
+        sub_questions: list[str] = actor.batch_act(question_prompts)        
+        # fill in the answer_prompts 
+        # Update answer_prompts with sub_questions
+        for idx in range(len(sub_questions)):
+            answer_prompts[idx].add(role='user', content=sub_questions[idx])
+        breakpoint()
+        # Generate sub_answers with log_probs in batch
+        sub_answers = world_model.batch_step_logprobs(answer_prompts)
+
+        breakpoint()
+        
+        # creating batch of prompt bases to work with 
+        question_prompt_bases = []
+        answer_prompt_bases = []
+        for idx, node in enumerate(leaf_nodes): 
+            question_prompt_bases.append(copy.deepcopy(self._question_prompt_base))
+            answer_prompt_bases.append(copy.deepcopy(self._answer_prompt_base))
+            
+        
+        
+        
+        
+        
+        
         # Initialize lists to hold prompts and sub-questions for batching
         action_prompts = []
         node_indices = []
         # make num_children x nodes prompts for batched child_nodes
-        for idx, node in enumerate(nodes):
+        for idx, node in enumerate(leaf_nodes):
             # Copy prompt history from node state
             question_prompt: Prompt = copy.deepcopy(self._question_prompt_base)
             question_prompt.copy_history(node.state)
@@ -196,7 +251,7 @@ class BatchMCTS:
         step_results = world_model.batch_step_logprobs(answer_prompts)
 
         # Now process the results and create child nodes
-        node_children = {idx: [] for idx in range(len(nodes))}  # Initialize
+        node_children = {idx: [] for idx in range(len(leaf_nodes))}  # Initialize
 
         for i, (node_idx, sub_q, step_result, question_prompt) in enumerate(
             zip(node_indices, sub_questions, step_results, action_prompts)
@@ -225,7 +280,7 @@ class BatchMCTS:
                 state=copy.deepcopy(question_prompt),
                 action=sub_q,
                 reward=reward,
-                parent=nodes[node_idx],
+                parent=leaf_nodes[node_idx],
                 is_terminal=terminated,
                 calc_q=self.calc_q_func
             )
@@ -234,7 +289,7 @@ class BatchMCTS:
             node_children[node_idx].append(child_node)
 
         # Finally, set the children for each node
-        for idx, node in enumerate(nodes):
+        for idx, node in enumerate(leaf_nodes):
             node.children = node_children.get(idx, [])
 
         # Reset the base prompts
@@ -302,7 +357,7 @@ class BatchMCTS:
         self._answer_prompt_base.reset()
         return False
 
-    def back_propagate(self, path: list[BTMCTSNode]) -> float:
+    def back_propagate(self, path: NodePath) -> float:
         """ 
         Updates each node in the path with the cumulative rewards from rollout and returns the updated path and the cum_reward for the root 
 
@@ -327,7 +382,7 @@ class BatchMCTS:
 
         return cum_reward
     
-    def batch_back_propagate(self, paths: list[list[BTMCTSNode]]) -> list[float]: 
+    def batch_back_propagate(self, paths: list[NodePath]) -> list[float]: 
         """ Batch back propagates a list of paths """
         cum_rewards = [self.back_propagate(path) 
                        for path in paths]
@@ -345,11 +400,28 @@ class BatchMCTS:
         max_tries: int
     ) -> Optional[list[BTMCTSNode]]:
         """Runs one iteration of MCTS on batch of input nodes using the actor-world model strategy."""
-        paths = self.batch_select(roots)
-        # Step 2: Identify terminal and non-terminal paths using term_indices mask
-        term_indices = [
-            self._is_terminal_with_depth_limit(path[-1]) for path in paths
-        ]
+        paths: list[NodePath] = self.batch_select(roots)
+        # Identify terminal and non-terminal paths using term_indices mask - True if terminal
+        terminal_indices: list[bool] = [self._is_terminal_with_depth_limit(path[-1]) for path in paths]
+        # terminal paths that we directly backprop
+        terminal_paths: list[NodePath] = [path for path, is_term in zip(paths, terminal_indices) if is_term]
+        # non-terminal paths we need to expand and sim
+        sim_paths: list[NodePath] = [path for path, is_term in zip(paths, terminal_indices) if not is_term]
+        if terminal_paths: 
+            breakpoint()
+            cum_rewards: list[float] = self.batch_back_propagate(terminal_paths)
+        if sim_paths: 
+            # get sim indices and samples we need for learning - corresponds to the paths we want to expand and sim
+            sim_indices: list[int] = [idx for idx, is_term in zip(sample_indices, terminal_indices) if not is_term]
+            sim_samples: list[GSM8KProblem] = [sample for sample, is_term in zip(samples, terminal_indices) if not is_term]
+            # get all leaf nodes to expand
+            leaves_to_expand: list[BTMCTSNode] = [path[-1] for path in sim_paths]
+            self.batch_expand(leaves_to_expand, actor, world_model, 
+                              num_children, sim_samples, sim_indices) 
+            
+            breakpoint()
+            
+        #################
         # Filter terminal and non-terminal paths
         terminal_paths: list[BTMCTSNode] = list(filter(
             lambda path: self._is_terminal_with_depth_limit(path[-1]), paths))

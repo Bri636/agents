@@ -109,6 +109,8 @@ class MutatedMCTSWorldReasoner(BaseReasoner):
         self.answer_prompt = answer_prompt
         self.question_prompt = question_prompt
         self.llm_output_filter = llm_output_filter
+        
+    def mutate_strategy(self, trace: list[B])
 
     def generate_answer(self,
                         idx: int,
