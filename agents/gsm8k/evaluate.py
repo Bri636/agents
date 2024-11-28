@@ -1,7 +1,7 @@
 """ Evaluator class for evaluating how well the llm agents perform """
 
 from __future__ import annotations
-from typing import Callable, Tuple, Any
+from typing import Callable, Tuple, Any, Optional
 import random
 import time
 from tqdm import tqdm
@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+import logging
 
 from agents.gsm8k.utils import read_jsonl, filter_output_type, gsm_is_correct
 from agents.generators.base_generator import BaseLLMGenerator
@@ -117,7 +118,8 @@ def batch_gsm_evaluate(
     disable_tqdm: bool = True,
     num_samples: int = 100,
     batch_size: int = 32,
-    num_tries: int = 10
+    num_tries: int = 10, 
+    logger: Optional[logging.Logger] = None
 ) -> Metrics:
     """ Performs batched evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
     from agents.utils import batch_data_with_indices
@@ -172,13 +174,14 @@ Num_samples is not divisible by batch_size !'''
                 title_align="center",
                 expand=True
             )
+            if logger: 
+                logger.info(f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
             console.print(panel_summ)
             progress_bar.update(1)
 
     percent_completed = (int(num_batches_completed * batch_size) / num_samples) * 100
     percent_correct = (num_correct / int(num_batches_completed * batch_size)) * \
         100 if num_batches_completed > 0 else 0.0
-    breakpoint()
     # TODO: figure out the discrepancy from percent_correct and batch_wise acuracy
     return Metrics(**{'completed': percent_completed, 'correct': percent_correct})
 
@@ -194,7 +197,7 @@ if __name__ == "__main__":
     
     logger = configure_logger(level='info', logging_save_path='./mcts_single.log')
 
-    config = GSMEvaluationConfig(batch_size=32, num_samples=128)
+    config = GSMEvaluationConfig(batch_size=64, num_samples=512)
     dataset = read_jsonl(config.dataset_path)
 
     gsm_eval = partial(batch_gsm_evaluate,
@@ -202,7 +205,8 @@ if __name__ == "__main__":
                        disable_tqdm=config.disable_tqdm,
                        num_samples=config.num_samples,
                        batch_size=config.batch_size,
-                       num_tries=config.num_tries)
+                       num_tries=config.num_tries, 
+                       logger=logger)
     reasoner_registry: dict[str, BaseReasoner] = BaseReasoner.registry
     generator_cfg = VLLMGeneratorConfig()
     generator = VLLMGenerator(generator_cfg)
