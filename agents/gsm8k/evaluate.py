@@ -125,12 +125,12 @@ def batch_gsm_evaluate(
     
     assert num_samples % batch_size == 0, f'''
 Num_samples is not divisible by batch_size !'''
-
     random.seed(seed)
     # for if batch_size is larger than num_samples
     num_samples = max(num_samples, batch_size)
     sample_indices = random.sample(range(len(dataset)), num_samples)
     samples = [dataset[i] for i in sample_indices]
+    num_batches = int(num_samples / batch_size)
 
     batched_samples, batch_indices = batch_data_with_indices(samples,
                                                        sample_indices,
@@ -141,28 +141,27 @@ Num_samples is not divisible by batch_size !'''
         f'Running Eval on {strategy} Reasoner', style="bold", characters='=')
     map(lambda _: console.rule(f'', style="bold", characters='='), range(2))
     time.sleep(1)
-
+    
     num_correct = 0
     num_batches_completed = 0
     with tqdm(total=num_samples, disable=disable_tqdm, desc=f"GSM Evaluation - {num_samples} Samples", leave=False) as progress_bar:
 
         for batch_idx, (batch, indices) in enumerate(zip(batched_samples, batch_indices)):
             finished, corrects, messages, panels = reasoner.batch_generate_answer(indices, batch, num_tries)
-            breakpoint()
             if finished: 
                 num_correct += sum(corrects)
                 num_batches_completed += 1  # Fixed increment
             reasoner.reset_pass() # reset prompts
             # Printing results for each sample
             idx_to_show = random.sample(range(len(messages)), 1)[0] # random sample from batch for a panel 
-            large_bar = f"Question {batch_idx + 1}"
+            large_bar = f"Batch {batch_idx + 1} of {num_batches} Total Batches"
             console.rule(large_bar, style="bold", characters='=')
             if all(panels):
                 console.print(panels[idx_to_show])
 
             reasoner_correct_text = Text.assemble(
                 ("* Reasoner: ", "bold red"),
-                (f"{messages[idx_to_show]}\n", "white"),
+                (f"Sample {messages[idx_to_show]}\n", "white"),
                 ("* Correct: ", "bold red"),
                 (f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %", "white")
             )
@@ -183,7 +182,6 @@ Num_samples is not divisible by batch_size !'''
     # TODO: figure out the discrepancy from percent_correct and batch_wise acuracy
     return Metrics(**{'completed': percent_completed, 'correct': percent_correct})
 
-
 if __name__ == "__main__":
 
     from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
@@ -196,7 +194,7 @@ if __name__ == "__main__":
     
     logger = configure_logger(level='info', logging_save_path='./mcts_single.log')
 
-    config = GSMEvaluationConfig(batch_size=4)
+    config = GSMEvaluationConfig(batch_size=32, num_samples=128)
     dataset = read_jsonl(config.dataset_path)
 
     gsm_eval = partial(batch_gsm_evaluate,

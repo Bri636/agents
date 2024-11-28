@@ -154,10 +154,11 @@ class MCTSWorldReasoner(BaseReasoner):
             return generated, correct, message, panel
 
     def batch_generate_answer(self,
-                              indices: list[int],
+                              sample_indices: list[int],
                               samples: list[dict[str, str]],
                               num_tries: int,
-                              num_children: int = 3
+                              num_children: int = 3, 
+                              verbose: bool = True
                               ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
         """
         Attempts to generate answers for a batch of samples.
@@ -167,17 +168,15 @@ class MCTSWorldReasoner(BaseReasoner):
             - A list of messages for each sample.
             - A list of panels (visualizations) for each sample.
         """
-        from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
         from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
         from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
         
         batch_size = len(samples)
-        generated = [False] * batch_size # assume false
-        correct = [False] * batch_size
+        corrects = [False] * batch_size
         messages = ['Answer incorrect or failed to generate for question.'] * batch_size
         panels = [None] * batch_size
-        
-        roots = []
+
+        roots: list[BTMCTSNode] = []
         for idx in range(batch_size): 
             # prime the prompts with the problem
             problem: GSM8KProblem = samples[idx]['question']
@@ -199,76 +198,28 @@ class MCTSWorldReasoner(BaseReasoner):
         mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt), 
                          answer_prompt_base=copy.deepcopy(answer_prompt))
 
-        answer, optimal_path, panels = mcts.batch_guess_answer(roots, 
-                                                               self.actor, 
-                                                               self.world_model, 
-                                                               num_children=num_children, 
-                                                               samples=samples, 
-                                                               sample_indices=indices, 
-                                                               max_tries=num_tries
-                                                               )
-        breakpoint()
-        # # Initialize MCTS instances and roots for each sample
-        # roots = []
-        # for idx in range(batch_size):
-        #     question = samples[idx]['question']
-        #     question_prompt = copy.deepcopy(self.question_prompt)
-        #     answer_prompt = copy.deepcopy(self.answer_prompt)
-        #     question_prompt.add('user', content=question)
-        #     answer_prompt.add('user', content=question)
-
-        #     root = BTMCTSNode(
-        #         state=question_prompt,
-        #         action=None,
-        #         reward=None,
-        #         parent=None,
-        #         is_terminal=False
-        #     )
-        #     roots.append(root)
-
-        # mcts = BatchMCTS(
-        #         question_prompt_base=question_prompt,
-        #         answer_prompt_base=answer_prompt
-        #     )
-        # ############### mine 
-        # # NOTE - expansion and simulation must take in different questions for them to be batched
-        # # aka one mcts interface per batch
-        # answer, optimal_path, panels = mcts.batch_guess_answer(roots, 
-        #                                                        self.actor, 
-        #                                                        self.world_model, 
-        #                                                        num_children=3, 
-        #                                                        samples=samples, 
-        #                                                        sample_indices=indices, 
-        #                                                        max_tries=5
-        #                                                        )
-        
-        # ########### gpt ##############
-
-        # # Process MCTS instances
-        # for idx in range(batch_size):
-        #     mcts: BatchMCTS = mcts_instances[idx]
-        #     root: BTMCTSNode = roots[idx]
-        #     try:
-        #         answer, optimal_path, panel = mcts.batch_guess_answer(
-        #             root=root,
-        #             actor=self.actor,
-        #             world_model=self.world_model,
-        #             sample=samples[idx],
-        #             sample_idx=indices[idx],
-        #             max_tries=num_tries,
-        #             num_children=num_children,
-        #             verbose=False  # Set to True if needed
-        #         )
-        #         if self.llm_output_filter(answer) == 'final_answer':
-        #             correct[idx], message = gsm_is_correct(indices[idx], answer, samples[idx])
-        #             messages[idx] = message
-        #         generated[idx] = True
-        #         panels[idx] = panel
-        #     except Exception as e:
-        #         messages[idx] = f"Error processing sample {indices[idx]}: {e}"
-
-        # overall_success = all(generated)
-        # return overall_success, correct, messages, panels
+        try: 
+            answers, optimal_paths, panels = mcts.batch_guess_answer(roots, 
+                                                                self.actor, 
+                                                                self.world_model, 
+                                                                num_children=num_children, 
+                                                                samples=samples, 
+                                                                sample_indices=sample_indices, 
+                                                                max_tries=num_tries
+                                                                )
+            for idx, (sample_idx, sample, answer) in enumerate(zip(sample_indices, samples, answers)): 
+                filtered_answer = self.llm_output_filter(answer)
+                if filtered_answer == 'final_answer':
+                        correct, message = gsm_is_correct(sample_idx, answer, sample)
+                        # update containers
+                        corrects[idx] = correct
+                        messages[idx] = message
+            return True, corrects, messages, panels
+            
+        except Exception as e:
+            messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
+            breakpoint()
+            return False, [False] * batch_size, messages, panels # else, False and drop batch 
 
     @classmethod
     def initialize(cls: Self,

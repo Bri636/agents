@@ -95,7 +95,7 @@ def gsm_is_correct(idx: int, answer: str, gold_answer: dict[str, str]) -> Tuple[
     gold_answer = float(gsm_extract_answer(gold_answer["answer"]))
     
     return (bool(answer == gold_answer), 
-            f'Question {idx + 1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n')
+            f'Question #{idx + 1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n')
 
 # mine 
 def batch_sample_gsm(dataset: list[dict[str, str]], batch_size: int) -> list[dict[str, str]]: 
