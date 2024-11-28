@@ -18,7 +18,7 @@ from rich.text import Text
 # imported classes
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
-from agents.reasoners.wm_reasoner import WorldModel, Actor
+from agents.reasoners.wm_mcts_reasoner import WorldModel, Actor
 from agents.mcts.bigtree.mcts_utils import SearchStrategies
 from agents.mcts.bigtree import Prompt, Computable, NodePath
 from agents.gsm8k import GSM8KProblem
@@ -92,9 +92,12 @@ class BatchMCTS:
                                    'max_visit', 'max_iter',
                                    'last_iter', 'last_terminal_iter']
         self.output_strategy = output_strategy
-        self._output_iter: list[BTMCTSNode] = None
-        self._output_cum_reward = -math.inf
-        self.trace_in_each_iter = []
+        # self._output_iter: list[BTMCTSNode] = None
+        # self._output_cum_reward = -math.inf
+        self._output_iters: dict[int, Optional[NodePath]] = {}
+        self._output_cum_rewards: dict[int, float] = {}
+
+        self.trace_in_each_iter: dict[int, list[NodePath]] = {}
         self.use_tqdm: bool = use_tqdm
         self.terminal_reward_strategy, self.reward_strategy = reward_strategies.get(
             reward_strategy)
@@ -174,7 +177,8 @@ class BatchMCTS:
         node_refs: list[BTMCTSNode] = []
         sample_refs: list[int] = []
         sample_idx_refs: list[int] = []
-        node_to_children = {node: [] for node in leaf_nodes}
+        node_true_idx_refs: list[int] = []
+        node_to_children: dict[int, list] = {idx: [] for idx in range(len(leaf_nodes))}
 
         for idx, node in enumerate(leaf_nodes):
             # Copy prompt history from node state
@@ -191,6 +195,7 @@ class BatchMCTS:
                 node_refs.append(node)
                 sample_refs.append(samples[idx])
                 sample_idx_refs.append(sample_indices[idx])
+                node_true_idx_refs.append(idx)
             # reset it per node so we do not copy multiple questions
             self._question_prompt_base.reset()
             self._answer_prompt_base.reset()
@@ -202,71 +207,21 @@ class BatchMCTS:
         # Update answer_prompts with sub_questions
         for idx in range(len(sub_questions)):
             answer_prompts[idx].add(role='user', content=sub_questions[idx])
-        breakpoint()
+
         # Generate sub_answers with log_probs in batch
         sub_answers = world_model.batch_step_logprobs(answer_prompts)
 
-        breakpoint()
-        
-        # creating batch of prompt bases to work with 
-        question_prompt_bases = []
-        answer_prompt_bases = []
-        for idx, node in enumerate(leaf_nodes): 
-            question_prompt_bases.append(copy.deepcopy(self._question_prompt_base))
-            answer_prompt_bases.append(copy.deepcopy(self._answer_prompt_base))
-            
-        
-        
-        
-        
-        
-        
-        # Initialize lists to hold prompts and sub-questions for batching
-        action_prompts = []
-        node_indices = []
-        # make num_children x nodes prompts for batched child_nodes
-        for idx, node in enumerate(leaf_nodes):
-            # Copy prompt history from node state
-            question_prompt: Prompt = copy.deepcopy(self._question_prompt_base)
-            question_prompt.copy_history(node.state)
-            # generate n child_node prompts for each node
-            for _ in range(num_children):
-                action_prompts.append(copy.deepcopy(question_prompt))
-                node_indices.append(idx)
+        # Process each sub_answer and create child nodes
+        for idx in range(len(sub_answers)):
+            # update each question prompt
+            sub_answer = sub_answers[idx]['text']
+            log_prob = sub_answers[idx]['log_probs']
+            question_prompts[idx].add(role='assistant', content=sub_questions[idx])
+            question_prompts[idx].add(role='user', content=sub_answer)
 
-        # Batch generate sub-questions
-        sub_questions: list[str] = actor.batch_act(action_prompts)
-
-        # Prepare answer prompts for batch processing
-        answer_prompts = []
-        for sub_q, question_prompt in zip(sub_questions, action_prompts):
-            # Update the question_prompt with the sub_question
-            question_prompt.add(role='assistant', content=sub_q)
-            # Prepare answer_prompt
-            answer_prompt = copy.deepcopy(self._answer_prompt_base)
-            answer_prompt.copy_history(question_prompt)
-            answer_prompts.append(answer_prompt)
-
-        # Batch generate sub-answers with log probabilities
-        step_results = world_model.batch_step_logprobs(answer_prompts)
-
-        # Now process the results and create child nodes
-        node_children = {idx: [] for idx in range(len(leaf_nodes))}  # Initialize
-
-        for i, (node_idx, sub_q, step_result, question_prompt) in enumerate(
-            zip(node_indices, sub_questions, step_results, action_prompts)
-        ):
-            sub_answer = step_result.get('text')
-            log_prob = step_result.get('log_probs')
-
-            # Update prompts
-            question_prompt.add(role='user', content=sub_answer)
-
-            # Determine if terminal
-            sample = samples[node_idx]
-            sample_idx = sample_indices[node_idx]
+            # 
             if filter_output_type(sub_answer) == 'final_answer':
-                out, message = gsm_is_correct(sample_idx, sub_answer, sample)
+                out, message = gsm_is_correct(sample_idx_refs[idx], sub_answer, sample_refs[idx])
                 if verbose:
                     print(message)
                 reward = self.terminal_reward_strategy(out)
@@ -274,88 +229,121 @@ class BatchMCTS:
             else:
                 reward = self.reward_strategy(log_prob)
                 terminated = False
+                
+            child_node = BTMCTSNode(state=copy.deepcopy(question_prompts[idx]),
+                                action=sub_questions[idx],
+                                reward=reward,
+                                parent=node_refs[idx],
+                                is_terminal=terminated,
+                                calc_q=self.calc_q_func)
 
-            # Create child node
-            child_node = BTMCTSNode(
-                state=copy.deepcopy(question_prompt),
-                action=sub_q,
-                reward=reward,
-                parent=leaf_nodes[node_idx],
-                is_terminal=terminated,
-                calc_q=self.calc_q_func
-            )
+            node_idx:int = node_true_idx_refs[idx]
+            node_to_children[node_idx].append(child_node)
 
-            # Add child node to the corresponding node
-            node_children[node_idx].append(child_node)
-
-        # Finally, set the children for each node
-        for idx, node in enumerate(leaf_nodes):
-            node.children = node_children.get(idx, [])
+        # assign each leaf node its children
+        for idx in node_to_children:
+            leaf_nodes[idx].children = node_to_children[idx]
 
         # Reset the base prompts
         self._question_prompt_base.reset()
         self._answer_prompt_base.reset()
-
-    def simulate_node(self,
-                      path: list[BTMCTSNode],
+        
+    def batch_simulate_node(self,
+                      paths: list[NodePath],
                       actor: Actor,
                       world_model: WorldModel,
                       max_tries: int,
-                      sample: dict,
-                      sample_idx: int,
+                      samples: list[GSM8KProblem],
+                      sample_indices: list[int],
                       verbose: bool = False
-                      ) -> bool:
+                      ) -> list[bool]:
         """ Simulates a single node until end of problem and returns a flag if successfully simulated or not """
-        # randomly select child
-        child_idx: int = random.sample(
-            range(len(path[-1].children)), 1)[0]  # randomly choose a child
-        node_to_sim: BTMCTSNode = path[-1].children[child_idx]
-        # copy child state for simulation
-        self._question_prompt_base.copy_history(node_to_sim.state)
-        self._answer_prompt_base.copy_history(node_to_sim.state)
+        # prompts to simulate
+        nodes_to_sim: list[BTMCTSNode] = []
+        question_prompts: list[Prompt] = []
+        answer_prompts: list[Prompt] = []
+        # masks for info for each path
+        active_mask: list[bool] = [] # flag for which paths to keep iterating
+        rollout_rewards: list[list[float]] = [] # batch stores the return for each paths
+        result_flags: list[bool] = [False] * len(paths) # 
+        
+        for idx, path in enumerate(paths): 
+            # randomly select child node
+            child_idx = random.choice(range(len(path[-1].children)))
+            child_node = path[-1].children[child_idx]
+            nodes_to_sim.append(child_node)
+            # Copy child state for simulation
+            question_prompt = copy.deepcopy(self._question_prompt_base)
+            answer_prompt = copy.deepcopy(self._answer_prompt_base)
+            question_prompt.copy_history(child_node.state)
+            answer_prompt.copy_history(child_node.state)
+            # 
+            question_prompts.append(question_prompt)
+            answer_prompts.append(answer_prompt)
+            rollout_rewards.append([])
+            active_mask.append(True)
 
-        rollout_rewards = []
         for _ in range(1, max_tries + 1):
-            # generating sub-question
-            sub_question = actor.act(self._question_prompt_base)
-            self._question_prompt_base.add(
-                role='assistant', content=sub_question)
-            self._answer_prompt_base.add(role='user', content=sub_question)
-            # generating sub-answer
-            step_result = world_model.step_logprobs(self._answer_prompt_base)
-            sub_answer = step_result.get('text')
-            log_prob = step_result.get('log_probs')
-            # updating prompts
-            self._question_prompt_base.add(role='user', content=sub_answer)
-            self._answer_prompt_base.add(role='assistant', content=sub_answer)
-            # collecting reward
-            rollout_rewards.append(self.reward_strategy(log_prob))
-            # Check for termination condition
-            if filter_output_type(sub_answer) == 'final_answer':
-                out, message = gsm_is_correct(sample_idx, sub_answer, sample)
-                rollout_rewards.append(self.terminal_reward_strategy(out))
-                if verbose:
-                    print(message)
-                # reset prompts to base again
-                self._question_prompt_base.reset()
-                self._answer_prompt_base.reset()
-                # idea return flag, if flag then skip backpropagation and then move to next
-                rollout_reward = sum(rollout_rewards)
-                node = path[-1].children[child_idx]
-                node.reward = rollout_reward
-                path.append(node)
-                # successful simulation
-                return True
-            # exit if prompt exceeds limit aka its a run-on
-            agents = (actor, world_model)
-            prompts = (self._question_prompt_base, self._answer_prompt_base)
-            if any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
-                return False  # Skip backpropagation due to prompt limit
-        # if failed in number of tries, exit
-        # reset prompts to base again
-        self._question_prompt_base.reset()
-        self._answer_prompt_base.reset()
-        return False
+            # for generating sub_questions
+            # Collect indices of active simulations
+            active_indices: list[int] = [idx for idx, active in enumerate(active_mask) if active]
+            if not active_indices:
+                break  # No active simulations left
+            # Prepare prompts for active simulations
+            active_question_prompts: list[Prompt] = [question_prompts[idx] for idx in active_indices]
+            # active_answer_prompts = [answer_prompts[idx] for idx in active_indices]
+            # Generate sub-questions in batch
+            sub_questions: list[str] = actor.batch_act(active_question_prompts)
+            # for generating sub_answers
+            # Update question_prompts and answer_prompts with sub_questions
+            for idx, i in enumerate(active_indices):
+                question_prompts[i].add(role='assistant', content=sub_questions[idx])
+                answer_prompts[i].add(role='user', content=sub_questions[idx])
+            # Generate sub-answers with log_probs in batch
+            active_answer_prompts: list[Prompt] = [answer_prompts[i] for i in active_indices]
+            step_results: list[dict] = world_model.batch_step_logprobs(active_answer_prompts)
+            # Process each sub_answer and update prompts
+            for idx, i in enumerate(active_indices):
+                sub_answer = step_results[idx]['text']
+                log_prob = step_results[idx]['log_probs']
+                # update prompts with sub_answer
+                question_prompts[i].add(role='user', content=sub_answer)
+                answer_prompts[i].add(role='assistant', content=sub_answer)
+                # Collect reward
+                rollout_rewards[i].append(self.reward_strategy(log_prob))
+                
+                # Check for termination condition
+                if filter_output_type(sub_answer) == 'final_answer':
+                    correct, message = gsm_is_correct(sample_indices[i], sub_answer, samples[i])
+                    rollout_rewards[i].append(self.terminal_reward_strategy(correct))
+                    if verbose:
+                        print(message)
+                    # Reset prompts to base again
+                    question_prompts[i].reset()
+                    answer_prompts[i].reset()
+                    # Update node reward and path
+                    rollout_reward = sum(rollout_rewards[i])
+                    nodes_to_sim[i].reward = rollout_reward
+                    paths[i].append(nodes_to_sim[i])
+                    # Mark as successful and deactivate simulation
+                    result_flags[i] = True
+                    active_mask[i] = False
+                    continue  # Move to the next simulation
+                
+                # Check if prompt exceeds limit
+                agents = (actor, world_model)
+                prompts = (question_prompts[i], answer_prompts[i])
+                if any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
+                    active_mask[i] = False  # Deactivate simulation due to prompt limit
+                    
+        # Reset prompts for all simulations
+        for i in range(len(paths)):
+            if question_prompts[i] is not None:
+                question_prompts[i].reset()
+            if answer_prompts[i] is not None:
+                answer_prompts[i].reset()
+        
+        return result_flags
 
     def back_propagate(self, path: NodePath) -> float:
         """ 
@@ -388,7 +376,21 @@ class BatchMCTS:
                        for path in paths]
         
         return cum_rewards
-
+    
+    def _update_output(self, path: NodePath, cum_reward: float, sample_idx: int) -> None:
+        """Updates the output based on the specified strategy for a single sample."""
+        current_cum_reward = self._output_cum_rewards.get(sample_idx, -math.inf)
+        
+        if self.output_strategy == 'max_iter' and path[-1].is_terminal and cum_reward > current_cum_reward:
+            self._output_cum_rewards[sample_idx] = cum_reward
+            self._output_iters[sample_idx] = path
+        elif self.output_strategy == 'last_iter':
+            self._output_cum_rewards[sample_idx] = cum_reward
+            self._output_iters[sample_idx] = path
+        elif self.output_strategy == 'last_terminal_iter' and path[-1].is_terminal:
+            self._output_cum_rewards[sample_idx] = cum_reward
+            self._output_iters[sample_idx] = path
+        
     def batch_iterate(
         self,
         roots: list[BTMCTSNode],
@@ -398,7 +400,7 @@ class BatchMCTS:
         samples: list[dict],
         sample_indices: list[int],
         max_tries: int
-    ) -> Optional[list[BTMCTSNode]]:
+    ) -> Optional[list[NodePath]]:
         """Runs one iteration of MCTS on batch of input nodes using the actor-world model strategy."""
         paths: list[NodePath] = self.batch_select(roots)
         # Identify terminal and non-terminal paths using term_indices mask - True if terminal
@@ -407,9 +409,14 @@ class BatchMCTS:
         terminal_paths: list[NodePath] = [path for path, is_term in zip(paths, terminal_indices) if is_term]
         # non-terminal paths we need to expand and sim
         sim_paths: list[NodePath] = [path for path, is_term in zip(paths, terminal_indices) if not is_term]
+        
         if terminal_paths: 
-            breakpoint()
-            cum_rewards: list[float] = self.batch_back_propagate(terminal_paths)
+            terminal_sample_indices: list[int] = [idx for idx, is_term in zip(sample_indices, terminal_indices) if is_term]
+            cum_rewards_terminal: list[float] = self.batch_back_propagate(terminal_paths)
+            # Update outputs for terminal paths
+            for path, cum_reward, sample_idx in zip(terminal_paths, cum_rewards_terminal, terminal_sample_indices):
+                self._update_output(path, cum_reward, sample_idx)
+
         if sim_paths: 
             # get sim indices and samples we need for learning - corresponds to the paths we want to expand and sim
             sim_indices: list[int] = [idx for idx, is_term in zip(sample_indices, terminal_indices) if not is_term]
@@ -419,54 +426,20 @@ class BatchMCTS:
             self.batch_expand(leaves_to_expand, actor, world_model, 
                               num_children, sim_samples, sim_indices) 
             
-            breakpoint()
+            successes = self.batch_simulate_node(sim_paths, actor, world_model, 
+                                                 max_tries, sim_samples, sim_indices)
+            bp_paths: list[NodePath] = [path for success, path 
+                                        in zip(successes, sim_paths) if success]
+            bp_sample_indices: list[int] = [idx for success, idx in zip(successes, sim_indices) if success]
             
-        #################
-        # Filter terminal and non-terminal paths
-        terminal_paths: list[BTMCTSNode] = list(filter(
-            lambda path: self._is_terminal_with_depth_limit(path[-1]), paths))
-        non_terminal_paths: list[BTMCTSNode] = list(filter(
-            lambda path: not self._is_terminal_with_depth_limit(path[-1]), paths))
-        # Step 3: Backpropagate terminal paths
-        if terminal_paths:
-            cum_rewards: list[float] = self.batch_back_propagate(terminal_paths)
-        # Step 4: Expand and simulate non-terminal paths
-        if non_terminal_paths:
-            non_terminal_nodes = [path[-1] for path in non_terminal_paths]
-            self.batch_expand(paths[-1], actor, world_model,
-                    num_children, samples, sample_indices)
-            ### rest of code to be done ###
-            
-            
-        # only backprop paths that are terminal       
-        cum_rewards = self.batch_back_propagate() # takes in list[list[BTMCTSNode]]
-            
-        if self._is_terminal_with_depth_limit(paths[-1]):
-            breakpoint()
-            cum_reward: list[float] = self.batch_back_propagate(paths)
-        else:
-            self.batch_expand(paths[-1], actor, world_model,
-                              num_children, samples, sample_indices)
-            success = self.simulate_node(
-                paths, actor, world_model, max_tries, samples, sample_indices
-            )
-            if success:
-                cum_reward = self.back_propagate(paths)
+            if bp_paths:
+                cum_rewards_bp: list[float] = self.batch_back_propagate(bp_paths)
+                # Update outputs for successfully simulated paths
+                for path, cum_reward, sample_idx in zip(bp_paths, cum_rewards_bp, bp_sample_indices):
+                    self._update_output(path, cum_reward, sample_idx)
             else:
-                return None
-        # Update the output based on the specified strategy
-        if self.output_strategy == 'max_iter' \
-                and paths[-1].is_terminal \
-                and cum_reward > self._output_cum_reward:
-            self._output_cum_reward = cum_reward
-            self._output_iter = paths
-        elif self.output_strategy == 'last_iter':
-            self._output_cum_reward = cum_reward
-            self._output_iter = paths
-        elif self.output_strategy == 'last_terminal_iter' and paths[-1].is_terminal:
-            self._output_cum_reward = cum_reward
-            self._output_iter = paths
-
+                return None # assume all sim_paths were not successful
+                    # Update the output based on the specified strategy
         return paths
 
     def batch_search(self,
@@ -482,22 +455,25 @@ class BatchMCTS:
         # run mcts for n times and store each explored path
         for _ in trange(self.num_iters, disable=self.use_tqdm, desc='MCTS iteration', leave=False):
             
-            path = self.batch_iterate(roots, actor, world_model,
-                                      num_children, samples, sample_indices, max_tries)
-            
-            breakpoint()
-            if path is None:  # if none skip iteration
-                message = f'\nError in llm parsing, or reached terminal, skipping MCTS iteration...\n'
+            paths: list[NodePath] = self.batch_iterate(roots, actor, world_model,
+                                                        num_children, samples, sample_indices, max_tries)
+            if paths: 
+                for idx, path in enumerate(paths): 
+                    if self.output_trace_in_each_iter: 
+                        self.trace_in_each_iter[idx].append((copy.deepcopy(path)))
+            else: 
+                message = f'\nError in llm parsing or reached terminal for all nodes in batch. Skipping MCTS iteration...\n'
                 self.logger.info(message) if self.logger else print(message)
                 continue
-            if self.output_trace_in_each_iter:
-                self.trace_in_each_iter.append(copy.deepcopy(path))
-
-        self._output_iter, self._output_cum_reward = SearchStrategies.execute_strategy(roots,
+        breakpoint()
+        # print tree for each node
+        for idx, root in enumerate(roots): 
+            self._output_iters[idx], self._output_cum_rewards[idx] = SearchStrategies.execute_strategy(root,
                                                                                        self.cum_reward_func,
                                                                                        self.output_strategy)
-
-        return self._output_iter, self._output_cum_reward
+            breakpoint()
+        breakpoint()
+        return self._output_iters, self._output_cum_rewards
 
     def batch_guess_answer(self,
                            roots: list[BTMCTSNode],
@@ -520,6 +496,10 @@ class BatchMCTS:
                                              max_tries)
         
         breakpoint()
+        ########## print each tree ##############
+        
+        
+        
         #################### others ###################
 
         if verbose:

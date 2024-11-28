@@ -153,8 +153,8 @@ class VLLMGenerator(BaseLLMGenerator):
         return responses
 
     def generate_with_logprobs(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
-                                                                                              list[str],
-                                                                                              list[float]]:
+                                                                                              list[list[str]],
+                                                                                              list[list[float]]]:
         """Generate response text from prompts.
 
         Parameters
@@ -183,11 +183,16 @@ class VLLMGenerator(BaseLLMGenerator):
         responses: list[str] = [output.outputs[0].text
                                 for output in outputs]
         log_probs: list[dict[int, Logprob]] = [
-            output.outputs[0].logprobs for output in outputs][0]
-        token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
+            output.outputs[0].logprobs for output in outputs]
+        
+        log_prob_seqs: list[list[float]] = [self.extract_log_probs(log_prob)['log_probs'] 
+                                           for log_prob in log_probs]
+        token_seqs: list[list[str]] = [self.extract_log_probs(log_prob)['tokens'] 
+                                           for log_prob in log_probs]
+        # token_seq, log_prob_seq = self.extract_log_probs(log_probs).values()
         return {'text': responses,
-                'token_seq': token_seq,
-                'log_probs': log_prob_seq,
+                'token_seq': token_seqs,
+                'log_probs': log_prob_seqs,
                 }
 
     def extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> dict[list[str], list[float]]:

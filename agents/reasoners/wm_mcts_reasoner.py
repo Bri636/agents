@@ -13,11 +13,12 @@ from agents.prompts import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
+
+# from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
+# from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
+# from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.gsm8k.types import GSM8KProblem
 from agents.mcts import T
-from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
-from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 
 
 class WorldModel:
@@ -40,14 +41,19 @@ class WorldModel:
                 'log_probs': sub_answer['log_probs'],
                 }
         
-    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict]:
+    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
         """ Batch generates the next state with log probabilities """
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
         """
         answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
         sub_answers = self.generator.generate_with_logprobs(answer_inputs)
-        return [{'text': ans['text'][0], 'log_probs': ans['log_probs']} for ans in sub_answers]
+        
+        texts = [sub_answer for sub_answer in sub_answers['text']]
+        log_probs = [log_prob for log_prob in sub_answers['log_probs']]
+
+        return [{'text': text, 'log_probs': log_prob} 
+                for text, log_prob in zip(texts, log_probs)]
 
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
@@ -161,6 +167,10 @@ class MCTSWorldReasoner(BaseReasoner):
             - A list of messages for each sample.
             - A list of panels (visualizations) for each sample.
         """
+        from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
+        from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
+        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+        
         batch_size = len(samples)
         generated = [False] * batch_size # assume false
         correct = [False] * batch_size
