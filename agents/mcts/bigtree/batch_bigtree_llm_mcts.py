@@ -450,7 +450,7 @@ class BatchMCTS:
                      samples: list[dict],
                      sample_indices: list[int],
                      max_tries: int
-                     ) -> Tuple[list[list[BTMCTSNode]], list[float]]:
+                     ) -> Tuple[dict[str, NodePath], dict[str, float]]:
         """ Search for the optimal path based on strategy """
         # run mcts for n times and store each explored path
         for _ in trange(self.num_iters, disable=self.use_tqdm, desc='MCTS iteration', leave=False):
@@ -465,14 +465,12 @@ class BatchMCTS:
                 message = f'\nError in llm parsing or reached terminal for all nodes in batch. Skipping MCTS iteration...\n'
                 self.logger.info(message) if self.logger else print(message)
                 continue
-        breakpoint()
         # print tree for each node
         for idx, root in enumerate(roots): 
             self._output_iters[idx], self._output_cum_rewards[idx] = SearchStrategies.execute_strategy(root,
                                                                                        self.cum_reward_func,
                                                                                        self.output_strategy)
-            breakpoint()
-        breakpoint()
+
         return self._output_iters, self._output_cum_rewards
 
     def batch_guess_answer(self,
@@ -487,7 +485,7 @@ class BatchMCTS:
                            ) -> Tuple[str, list[BTMCTSNode], Panel]:
         """ Generates an answer for a gsm8k problem via mcts then inference """
         # run inference from best current node
-        optimal_paths, _ = self.batch_search(roots,
+        batch_optimal_paths, batch_output_cum_rewards = self.batch_search(roots,
                                              actor,
                                              world_model,
                                              num_children,
@@ -495,15 +493,135 @@ class BatchMCTS:
                                              sample_indices,
                                              max_tries)
         
+        
+        num_samples = len(roots)
+        # Initialize lists to hold the results
+        answers: list[str] = [''] * num_samples
+        optimal_paths: list[list[BTMCTSNode]] = [None] * num_samples
+        panels: list[Panel] = [None] * num_samples
+        
+        # Lists for batch processing
+        question_prompts: list[BasePromptTemplate] = []
+        answer_prompts: list[BasePromptTemplate] = []
+        indices_to_process: list[int] = []  # Indices of samples to process
+        done_flags: list[bool] = []  # Flags indicating if the sample is done
         breakpoint()
-        ########## print each tree ##############
         
-        
-        
-        #################### others ###################
+        # Process each sample
+        for idx, root in enumerate(roots):
+            # Get the optimal path for this sample
+            optimal_path = batch_optimal_paths.get(idx)
+            if optimal_path is None:
+                # No optimal path found for this sample
+                if verbose:
+                    panels[idx] = Panel(f"No optimal path found for sample index {idx}")
+                continue
 
-        if verbose:
-            panel = self.print_with_optimal(roots)
+            optimal_paths[idx] = optimal_path
+
+            # If verbose, get the panel for this root
+            if verbose:
+                panel = self.print_with_optimal(root)
+                panels[idx] = panel
+
+            # Check if the last node is terminal
+            if optimal_path[-1].is_terminal:
+                # Extract the answer from the last node's state history
+                answer = optimal_path[-1].state.history[-1]['content']
+                answers[idx] = answer
+            else:
+                # Not terminal, need to run further inference
+                # Copy history to new prompts
+                question_prompt = copy.deepcopy(self._question_prompt_base)
+                answer_prompt = copy.deepcopy(self._answer_prompt_base)
+                question_prompt.copy_history(optimal_path[-1].state)
+                answer_prompt.copy_history(optimal_path[-1].state)
+
+                question_prompts.append(question_prompt)
+                answer_prompts.append(answer_prompt)
+                indices_to_process.append(idx)
+                done_flags.append(False)
+        breakpoint()
+        # Batch inference for non-terminal nodes
+        for _ in range(1, max_tries + 1):
+            # Collect indices of prompts not yet done
+            active_indices = [i for i, done in enumerate(done_flags) if not done]
+            if not active_indices:
+                break  # All done
+
+            # Prepare active prompts
+            active_question_prompts = [question_prompts[i] for i in active_indices]
+            active_answer_prompts = [answer_prompts[i] for i in active_indices]
+
+            # Generate sub-questions in batch
+            sub_questions = actor.batch_act(active_question_prompts)
+
+            # Update prompts with sub-questions
+            for idx_in_active, i in enumerate(active_indices):
+                sub_question = sub_questions[idx_in_active]
+                question_prompts[i].add(role='assistant', content=sub_question)
+                answer_prompts[i].add(role='user', content=sub_question)
+
+            # Generate sub-answers with log_probs in batch
+            step_results = world_model.batch_step_logprobs(active_answer_prompts)
+
+            # Update prompts with sub-answers and check for termination
+            for idx_in_active, i in enumerate(active_indices):
+                step_result = step_results[idx_in_active]
+                sub_answer = step_result.get('text')
+                log_prob = step_result.get('log_probs')
+
+                question_prompts[i].add(role='user', content=sub_answer)
+                answer_prompts[i].add(role='assistant', content=sub_answer)
+
+                # Check for termination condition
+                if filter_output_type(sub_answer) == "final_answer":
+                    idx_in_roots = indices_to_process[i]
+                    answers[idx_in_roots] = sub_answer
+                    done_flags[i] = True
+                elif any(
+                    agent.prompt_exceeds_limit(prompt)
+                    for agent, prompt in zip(
+                        (actor, world_model),
+                        (question_prompts[i], answer_prompts[i])
+                    )
+                ):
+                    idx_in_roots = indices_to_process[i]
+                    answers[idx_in_roots] = sub_answer
+                    done_flags[i] = True
+
+        # Reset prompts for all
+        for question_prompt in question_prompts:
+            question_prompt.reset()
+        for answer_prompt in answer_prompts:
+            answer_prompt.reset()
+        breakpoint()
+        # Return the answers, optimal paths, and panels
+        return answers, optimal_paths, panels
+        
+        
+        
+        
+        ########## print each tree ##############
+        console = Console()
+        if verbose: 
+            panels = []
+            for idx, root in enumerate(roots): 
+                panel = self.print_with_optimal(root)
+                console.print(panel)
+                panels.append(panel)
+        breakpoint()
+        #################### others ###################
+        answers: dict[str] = []
+        for idx, optimal_path in enumerate(batch_optimal_paths): 
+            
+            if optimal_path[-1].is_terminal: 
+                answers[idx] = optimal_path[-1].state.history[-1].content
+            else: 
+                ...
+                
+                
+                
         # if best leaf is not terminal, then
         if optimal_path[-1].is_terminal:
             answer: str = optimal_path[-1].state.history[-1].content
@@ -543,9 +661,8 @@ class BatchMCTS:
         
         
     def print_with_optimal(self, root: BTMCTSNode) -> Panel:
-        optimal_path, max_reward = SearchStrategies.execute_strategy(root,
-                                                                     self.cum_reward_func,
-                                                                     self.output_strategy)
+        # NOTE - potential issue with this
+        optimal_path, max_reward = SearchStrategies.execute_strategy(root, self.cum_reward_func, self.output_strategy)
         optimal_node_ids = set(node.id for node in optimal_path)
         rich_tree = self.build_tree(root, optimal_node_ids)
         title = Text.assemble(
