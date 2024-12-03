@@ -177,7 +177,7 @@ def chunk_datasets_and_save(dataset: list[dict],
     
     saved_dataset_paths: list[str] = []
     for idx, dataset_chunk in enumerate(datasets): 
-        save_path = os.path.join(save_dir, f'chunk_{idx}_GSM8K.jsonl')  # Proper file naming
+        save_path = os.path.join(save_dir, f'chunk-{idx}-GSM8K-len-{len(dataset_chunk)}.jsonl')  # Proper file naming
         with io.open(save_path, 'w', buffering=4096) as file: 
             file.writelines(json.dumps(entry) + "\n" for entry in dataset_chunk)
         saved_dataset_paths.append(save_path)

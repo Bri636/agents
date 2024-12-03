@@ -1,7 +1,7 @@
 """ For running parsl evaluation given a strategy """
 
 from __future__ import annotations
-from typing import Any, TypeVar, Optional
+from typing import Any, TypeVar, Optional, Tuple
 from parsl import python_app
 from pydantic import Field
 from argparse import ArgumentParser
@@ -11,6 +11,8 @@ from agents.generators import VLLMGeneratorConfig
 from agents.gsm8k import GSM8KProblem, GSMEvaluationConfig, Metrics
 from agents.agent_parsl import PolarisConfig
 from agents.utils import BaseConfig
+from agents.callbacks import (ThroughputCallback, ThroughputMetrics, 
+                              CallbackMetrics, Registered_Callbacks, Callback)
 
 T = TypeVar('T')
 
@@ -99,8 +101,9 @@ def parsl_batch_generate_answer(dataset_chunk: list[GSM8KProblem],
 
 def standard_batch_generate_answer(dataset: list[GSM8KProblem], 
                                    eval_config: GSMEvaluationConfig, 
-                                   generator_config: VLLMGeneratorConfig
-                                   ) -> Metrics: 
+                                   generator_config: VLLMGeneratorConfig, 
+                                   callbacks: list[Callback]
+                                   ) -> Tuple[Metrics, list[CallbackMetrics]]: 
     """ Runs standard batch generation """
     from agents.reasoners import BaseReasoner, LLMReasoner, WorldReasoner, MCTSWorldReasoner
     from agents.generators import VLLMGenerator, VLLMGeneratorConfig
@@ -116,7 +119,7 @@ def standard_batch_generate_answer(dataset: list[GSM8KProblem],
     num_samples = len(dataset)
 
     # Call batch_gsm_evaluate
-    metrics = batch_gsm_evaluate(
+    metrics, callback_metrics = batch_gsm_evaluate(
         strategy=eval_config.strategy,
         dataset=dataset,
         reasoner=reasoner,
@@ -125,9 +128,10 @@ def standard_batch_generate_answer(dataset: list[GSM8KProblem],
         num_samples=num_samples,
         batch_size=eval_config.batch_size,
         num_tries=eval_config.num_tries,
+        callbacks=callbacks,
         logger=None
     )
-    return metrics
+    return metrics, callback_metrics
 
 
 def parse_args() -> Any:
@@ -159,8 +163,13 @@ def parse_args() -> Any:
     arg_parser.add_argument('--strategy', 
                             type=str, 
                             default='base')
+    arg_parser.add_argument('--num_samples', 
+                            type=int, 
+                            default=1000)
+    arg_parser.add_argument('--batch_size', 
+                            type=int, 
+                            default=64)
     return arg_parser.parse_args()
-
 
 if __name__ == "__main__":
     import pprint as pp
@@ -178,6 +187,9 @@ if __name__ == "__main__":
     
     eval_config: GSMEvaluationConfig = master_config.eval_config
     eval_config.dataset_path = args.dataset_path
+    eval_config.batch_size = args.batch_size
+    eval_config.num_samples = args.num_samples
+    eval_config.strategy = args.strategy
     
     generator_config: VLLMGeneratorConfig = VLLMGeneratorConfig(llm_name=args.model_path,
                                                                 dtype=args.dtype)
@@ -185,6 +197,7 @@ if __name__ == "__main__":
     logger = configure_logger('info', logging_save_path=args.logging_save_path)
     dataset = read_jsonl_dataset(master_config.dataset_path)
     dataset = truncate_dataset(dataset, eval_config.batch_size)
+    callbacks = ThroughputCallback()
     
     if args.use_parsl: 
         parsl_config = master_config.parsl_config.get_config(
@@ -225,5 +238,11 @@ if __name__ == "__main__":
         logger.info(f'Aggregate Results:\n\n{asdict(overall_metrics)}')
         
     else: 
-        metrics = standard_batch_generate_answer(dataset, eval_config, generator_config)
+        metrics, callback_metrics = standard_batch_generate_answer(dataset, 
+                                                                   eval_config, 
+                                                                   generator_config, 
+                                                                   callbacks)
+        
         logger.info(f'Results from running:\n\n{asdict(metrics)}')
+        for metric in callback_metrics: 
+            logger.info(f'Results from callbacks: {asdict(metric)}')

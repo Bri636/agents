@@ -1,7 +1,7 @@
 """ Evaluator class for evaluating how well the llm agents perform """
 
 from __future__ import annotations
-from typing import Callable, Tuple, Any, Optional, Literal
+from typing import Callable, Tuple, Any, Optional, Literal, Union
 import random
 import time
 from tqdm import tqdm
@@ -22,9 +22,10 @@ from agents.reasoners.reasoner import LLMReasoner
 from agents.reasoners.wm_reasoner import WorldReasoner
 from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
 from agents.utils import BaseConfig, register_strategy
+from agents.callbacks import ThroughputCallback, ThroughputMetrics, BatchMetrics
 # import types
 from agents.gsm8k import T
-
+from agents.callbacks import Callback, CallbackMetrics, Registered_Callbacks
 
 @dataclass
 class Metrics:
@@ -104,15 +105,22 @@ def batch_gsm_evaluate(
     num_samples: int = 100,
     batch_size: int = 32,
     num_tries: int = 10, 
+    callbacks: Optional[list[Callback] | Callback] = None,
     logger: Optional[logging.Logger] = None
-) -> Metrics:
+) -> Tuple[Metrics, list[CallbackMetrics]]:
     """ Performs batched evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
     from agents.utils import batch_data_with_indices
     from agents.gsm8k.types import GSM8KProblem
+    from agents.callbacks.callbacks import ThroughputCallback, ThroughputMetrics
 
+    # setting up and double checking callback stuff
     assert num_samples % batch_size == 0, f'''
 Num_samples is not divisible by batch_size !'''
     random.seed(seed)
+    
+    if not isinstance(callbacks, list): 
+        callbacks = [callbacks]
+    
     # for if batch_size is larger than num_samples
     num_samples = max(num_samples, batch_size)
     sample_indices = random.sample(range(len(dataset)), num_samples)
@@ -128,12 +136,17 @@ Num_samples is not divisible by batch_size !'''
         f'Running Eval on {strategy} Reasoner', style="bold", characters='=')
     map(lambda _: console.rule(f'', style="bold", characters='='), range(2))
     time.sleep(1)
+
+    [callback.on_start() for callback in callbacks] # turn on all callbacks
     
     num_correct = 0
     num_batches_completed = 0
     with tqdm(total=num_samples, disable=disable_tqdm, desc=f"GSM Evaluation - {num_samples} Samples", leave=False) as progress_bar:
 
         for batch_idx, (batch, indices) in enumerate(zip(batched_samples, batch_indices)):
+            # callbacks on batch start
+            [callback.on_batch_start() for callback in callbacks]
+            
             finished, corrects, messages, panels = reasoner.batch_generate_answer(indices, batch, num_tries)
             if finished: 
                 num_correct += sum(corrects)
@@ -159,6 +172,9 @@ Num_samples is not divisible by batch_size !'''
                 title_align="center",
                 expand=True
             )
+            # logging statistics
+            [callback.on_batch_end(batch_idx=batch_idx, batch_size=batch_size) 
+             for callback in callbacks]
             if logger: 
                 logger.info(f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
             else:
@@ -169,13 +185,19 @@ Num_samples is not divisible by batch_size !'''
     percent_completed = (int(num_batches_completed * batch_size) / num_samples) * 100
     percent_correct = (num_correct / int(num_batches_completed * batch_size)) * \
         100 if num_batches_completed > 0 else 0.0
+        
+    if callbacks: 
+        callback_metrics: list[CallbackMetrics] = [callback.return_metrics() 
+                                                   for callback in callbacks]
     # TODO: figure out the discrepancy from percent_correct and batch_wise acuracy
-    return Metrics(**{'percent_completed': percent_completed, 
+    return (Metrics(**{'percent_completed': percent_completed, 
                       'percent_correct': percent_correct, 
                       'num_correct': num_correct, 
                       'num_completed': num_batches_completed, 
                       'num_total': num_samples
-                      })
+                      }), 
+            callback_metrics
+            )
 
 def gsm_evaluate(
     strategy: str,

@@ -203,80 +203,8 @@ def configure_logger(level: str = 'debug',
     return logger
 
 
-@dataclass
-class BatchMetrics:
-    batch_idx: int
-    batch_size: int
-    batch_time: float
-
-@dataclass
-class EpochMetrics:
-    epoch_idx: int
-    epoch_time: float
-    batch_metrics: List[BatchMetrics] = field(default_factory=list)
-
-@dataclass
-class ThroughputMetrics:
-    total_time: float = 0.0
-    total_samples: int = 0
-    total_batches: int = 0
-    samples_per_second: float = 0.0
-    batches_per_second: float = 0.0
-    epoch_metrics: List[EpochMetrics] = field(default_factory=list)
-
-class ThroughputCallback:
-    def __init__(self, metrics: ThroughputMetrics):
-        self.metrics = metrics
-        self._epoch_start_time = None
-        self._total_start_time = None
-        self._current_epoch = None
-
-    def on_start(self):
-        """ Called at the start of the training process."""
-        self._total_start_time = time.time()
-
-    def on_epoch_start(self, epoch: int):
-        """ Called at the start of each epoch."""
-        self._epoch_start_time = time.time()
-        self._current_epoch = EpochMetrics(epoch_idx=epoch)
-
-    def on_batch_end(self, batch_idx, batch_size):
-        """Called at the end of each batch."""
-        batch_end_time = time.time()
-        batch_time = batch_end_time - self._epoch_start_time
-        self._epoch_start_time = batch_end_time  # Reset for the next batch
-        # Add batch metrics
-        self._current_epoch.batch_metrics.append(
-            BatchMetrics(batch_idx=batch_idx, batch_size=batch_size, batch_time=batch_time)
-        )
-        # Update totals
-        self.metrics.total_samples += batch_size
-        self.metrics.total_batches += 1
-
-    def on_epoch_end(self, epoch: int):
-        """Called at the end of each epoch."""
-        epoch_end_time = time.time()
-        epoch_time = epoch_end_time - self._epoch_start_time
-
-        # Store epoch metrics
-        self._current_epoch.epoch_time = epoch_time
-        self.metrics.epoch_metrics.append(self._current_epoch)
-
-    def on_end(self):
-        """ Called at the end of the training process."""
-        total_end_time = time.time()
-        self.metrics.total_time = total_end_time - self._total_start_time
-
-        # Calculate throughput
-        self.metrics.samples_per_second = (
-            self.metrics.total_samples / self.metrics.total_time
-            if self.metrics.total_time > 0 else 0
-        )
-        self.metrics.batches_per_second = (
-            self.metrics.total_batches / self.metrics.total_time
-            if self.metrics.total_time > 0 else 0
-        )
-        
-    def return_metrics(self) -> dict[str, Any]: 
-        return asdict(self.metrics)
+def get_logging_path(env_name: str = 'agents', file_name: str = 'some_log_file.log') -> str: 
+    import pkg_resources
+    """ Returns to gsm.jsonl filepath based on package name """
+    return str(pkg_resources.resource_filename(env_name, '') + f'/log_files/{file_name}')
 

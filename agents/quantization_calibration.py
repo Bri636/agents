@@ -46,9 +46,13 @@ def main():
     
     args = parse_arguments()
     
+    # model = SparseAutoModelForCausalLM.from_pretrained(
+    # args.model_name_or_path, device_map="auto", torch_dtype="auto",
+    # )
     model = SparseAutoModelForCausalLM.from_pretrained(
     args.model_name_or_path, device_map="auto", torch_dtype="auto",
     )
+    
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     # Configure the quantization algorithms
     recipe = [
