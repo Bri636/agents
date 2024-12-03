@@ -18,7 +18,6 @@ from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 # from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.gsm8k.types import GSM8KProblem
-from agents.mcts import T
 
 
 class WorldModel:

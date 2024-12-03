@@ -13,3 +13,5 @@ class GSM8KProblem(TypedDict):
     """
     question: str
     answer: str
+    
+T = TypeVar('T')

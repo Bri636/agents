@@ -8,14 +8,14 @@ from typing import List
 # from sentence_transformers import SentenceTransformer, util
 from agents.prompt_breeder.mutation_prompts import mutation_prompts
 from agents.prompt_breeder.thinking_styles import thinking_styles
-from agents.gsm8k.utils import read_jsonl
+from agents.gsm8k.utils import read_jsonl_dataset
 
 from dotenv import load_dotenv
 from rich import print
 
 load_dotenv()
 
-gsm8k_examples = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
+gsm8k_examples = read_jsonl_dataset('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
 
 # need below for estimation_distribution_mutation, not currently using.
 # model = SentenceTransformer('multi-qa-distilbert-cos-v1')

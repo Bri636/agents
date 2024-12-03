@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 from typing import TypeVar
-
-T = TypeVar('T')
-
-Chat = list[dict[str, str]]
-""" One Single Chat interaction """
+from agents.reasoners.base_reasoner import BaseReasoner
+from agents.reasoners.reasoner import LLMReasoner
+from agents.reasoners.wm_reasoner import WorldReasoner
+from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
 
 def register_strategy(strategy_dict, name=None):
     """Decorator to register a method as a search strategy."""

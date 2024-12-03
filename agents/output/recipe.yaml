@@ -1,0 +1,7 @@
+DEFAULT_stage:
+  DEFAULT_modifiers:
+    SmoothQuantModifier: {smoothing_strength: 0.8}
+    GPTQModifier:
+      targets: Linear
+      ignore: [lm_head]
+      scheme: W8A8

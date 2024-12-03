@@ -46,6 +46,7 @@ dependencies = [
     "vllm", 
     "ollama", 
     "ale-py", 
+    "llmcompressor==0.1.0"
 ]
 
 [project.urls]

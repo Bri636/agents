@@ -1,0 +1,24 @@
+dataset_path: /lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl
+num_chunks: 4
+eval_config:
+    dataset_path: /lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl
+    seed: 10
+    disable_tqdm: true
+    num_samples: 128
+    num_tries: 10
+    batch_size: 32
+    strategy: mcts_world_model
+parsl_config:
+    name: polaris
+    label: htex
+    num_nodes: 1
+    worker_init: module use /soft/modulefiles; module load conda; conda activate agents;
+        cd /lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/
+    scheduler_options: '#PBS -l filesystems=home:eagle:grand'
+    account: FoundEpidem
+    queue: debug
+    walltime: '1:00:00'
+    cpus_per_node: 32
+    cores_per_worker: 8.0
+    retries: 0
+    worker_debug: false

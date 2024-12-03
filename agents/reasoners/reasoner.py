@@ -12,7 +12,7 @@ from agents.prompts import BasePromptTemplate
 from agents.gsm8k import GSM8KProblem
 from agents.prompts.standard_prompt import StandardGSMPromptTemplate
 # import types
-from agents.reasoners import T
+from agents.reasoners.types import T
 
 @BaseReasoner.register(name='base')
 class LLMReasoner(BaseReasoner):

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from agents.utils import BaseConfig
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.gsm_llama_prompts import BASE, QUESTION, ANSWER
-from agents.gsm8k.utils import read_jsonl
+from agents.gsm8k.utils import read_jsonl_dataset
 
 class GSM8kPromptDict(TypedDict):
     """ Stores the Components for the Prompt """

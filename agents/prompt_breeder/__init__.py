@@ -11,12 +11,12 @@ import time
 
 from agents.generators import BaseLLMGenerator
 from agents.prompt_breeder.mutation_operators import mutate
-from agents.gsm8k.utils import read_jsonl
+from agents.gsm8k.utils import read_jsonl_dataset
 from agents.prompt_breeder.types import EvolutionUnit, Population
 
 logger = logging.getLogger(__name__)
 
-gsm8k_examples = read_jsonl('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
+gsm8k_examples = read_jsonl_dataset('/Users/BrianHsu/Desktop/GitHub/agents/agents/data/gsm.jsonl')
 
 def create_population(tp_set: List, mutator_set: List, problem_description: str) -> Population:
     """samples the mutation_prompts and thinking_styles and returns a 'Population' object.

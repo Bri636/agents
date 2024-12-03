@@ -3,7 +3,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Callable, Self
-from agents.reasoners import T
+from agents.reasoners.types import T
 from agents.generators.base_generator import BaseLLMGenerator
 
 class BaseReasoner: 

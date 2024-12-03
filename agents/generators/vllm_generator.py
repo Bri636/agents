@@ -229,13 +229,13 @@ class VLLMGenerator(BaseLLMGenerator):
 
 if __name__ == "__main__":
 
-    from agents.gsm8k.utils import read_jsonl, batch_sample_gsm
+    from agents.gsm8k.utils import read_jsonl_dataset, batch_sample_gsm
     # from agents.prompts.gsm_llama_prompts ...
 
     data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
     batch_size = 16
 
-    dataset = read_jsonl(data_path)
+    dataset = read_jsonl_dataset(data_path)
     samples = batch_sample_gsm(dataset, batch_size)
 
     breakpoint()

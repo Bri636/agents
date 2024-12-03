@@ -1,11 +1,18 @@
-'''Utils for loading datasets'''
+''' Utils for loading datasets'''
 
 from __future__ import annotations
 from datasets import load_dataset
 import os
-from agents.dataset_utils import Dataset_Info
+from enum import Enum
 
-def download_datasets(dataset_info: Dataset_Info, 
+class HFDatasetNames(Enum):
+    ''' Containers for which dataset to download '''
+    GSMK8 = {
+        'main': 'openai/gsm8k',
+        'socratic': 'openai/gsm8k'
+    }
+
+def download_datasets(dataset_info: HFDatasetNames, 
                       cache_dir: str = '/Users/BrianHsu/Desktop/GitHub/agents/agents/data/'
                       ) -> list[str]: 
     ''' Downloads datasets '''
@@ -23,9 +30,36 @@ def download_datasets(dataset_info: Dataset_Info,
         if isinstance(info, dict): 
             list(map(lambda item: load_dataset(item[1], item[0], cache_dir=dataset_cache_path), info.items()))
         
-    return download_messages    
+    return download_messages 
+
+def truncate_dataset(dataset: list[GSM8KProblem], 
+                     batch_size: int, 
+                     logger: Optional[logging.Logger]=None) -> list[GSM8KProblem]:
+    """
+    Truncates the dataset to the largest size divisible by the batch size.
+
+    Args:
+        dataset (List[T]): The input dataset to truncate.
+        batch_size (int): The batch size to make the dataset divisible by.
+
+    Returns:
+        List[T]: A truncated dataset with size divisible by batch_size.
+    """
+    # Calculate the largest size divisible by the batch size
+    truncated_size = (len(dataset) // batch_size) * batch_size
+    message = f"Dataset Length {len(dataset)} Not Divisible by Batch Size: {batch_size}, truncating to {truncated_size}..."
+    if logger: 
+        logger.info(message)
+    else: 
+        print(message)
+    return dataset[:truncated_size] 
+
+
+def chunk_datasets_and_save(dataset_name_or_path: str, batch_size: int, save_dir: str) -> None: 
+    
+    ...  
             
 if __name__=="__main__": 
     
-    download_datasets(Dataset_Info)
+    download_datasets(HFDatasetNames)
     
