@@ -183,12 +183,3 @@ def chunk_datasets_and_save(dataset: list[dict],
         saved_dataset_paths.append(save_path)
     
     return saved_dataset_paths
-            
-if __name__=="__main__": 
-    
-    chunk = read_jsonl_dataset('/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/dataset_chunks/chunk_0_GSM8K.jsonl')
-    
-    breakpoint()
-    
-    
-    download_datasets(HFDatasetNames)
