@@ -259,7 +259,7 @@ Carefully read and interpret the problem to ensure you understand key relationsh
 
     def add_eval(self,
                  gold_trajectory: dict[str, str], # dict[] --> extract answer from 
-                 mcts_prompt: BasePromptTemplate, # the returned final mcts_prompt 
+                 mcts_prompt: BasePromptTemplate | GSMStrategyPromptTemplate, # the returned final mcts_prompt 
                  correct: bool
                  ) -> None:
         """ Adds the prompt from the leaf node of the optimal path """
@@ -267,11 +267,72 @@ Carefully read and interpret the problem to ensure you understand key relationsh
                   False: 'WRONG'}
         answer: str = gold_trajectory['answer'] # multi-line answer
         assistant_msg: str = f'\n\n** Gold Answer **\n{answer}'
-        
-        str_prompt_history: str = format_prompt_messages(mcts_prompt.history)
+        str_prompt_history: str = self.format_prompt_messages(mcts_prompt.history)
         single_traj: str = str_prompt_history + assistant_msg
         result = single_traj + f'\n\n** Result **:\nAnswer Guess is {tf_map.get(correct)}'
         self.add(role='user', content=result)
+        
+    def format_prompt_messages(self, messages: List[Any]) -> str:
+        """Formats a list of messages into the desired structured output.
+        
+        The messages can be either PromptMessage objects or dicts with 'role' and 'content'.
+        If it's PromptMessage, access them by message.role and message.content.
+        If it's dict, access by message['role'] and message['content'].
+        """
+        output = []
+        idx = None
+        answer_guess_section = []
+
+        def get_role_and_content(msg):
+            if isinstance(msg, PromptMessage):
+                return msg.role, msg.content
+            elif isinstance(msg, dict):
+                return msg.get('role', ''), msg.get('content', '')
+            else:
+                # If the message is neither a dict nor PromptMessage, handle gracefully
+                # We'll default to user role and empty content.
+                return 'user', str(msg)
+
+        for i, message in enumerate(messages):
+            role, content = get_role_and_content(message)
+
+            # Extract question index only once from the first user message
+            if role == 'user' and idx is None:
+                idx = extract_question_idx(content)
+                if idx is None:
+                    # If we cannot find a question index, default to 1
+                    idx = 1
+
+            if role == 'user':
+                if i == 0:
+                    # First user message considered the main math problem
+                    parts = content.split(':', 1)
+                    if len(parts) > 1:
+                        question_text = parts[1].strip()
+                    else:
+                        # If we can't split properly, just use entire content
+                        question_text = content.strip()
+
+                    output.append(
+                        f"user:\n** Math Problem **\nQuestion {idx}: {question_text}")
+                else:
+                    # Subsequent user messages are part of answer guesses
+                    answer_guess_section.append(content)
+            elif role == 'assistant':
+                # Assistant content also considered as part of the answer guess section
+                answer_guess_section.append(content)
+            else:
+                # If an unexpected role appears, handle gracefully by ignoring or treating as user
+                # Here we just ignore
+                pass
+
+        # Combine all answer guesses into one structured section
+        if answer_guess_section:
+            output.append(f"user:\n** Answer Guess **\n" + "\n".join(answer_guess_section))
+
+        return "\n\n".join(output)
+
+
 
 
 if __name__ == "__main__":

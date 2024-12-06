@@ -275,12 +275,13 @@ if __name__ == "__main__":
         logger.info(f'Aggregate Results:\n\n{asdict(overall_metrics)}')
         
     else: 
+        logger.info(f'Config:{pp.pformat(asdict(eval_config))}')
         metrics, callback_metrics = standard_batch_generate_answer(dataset, 
                                                                    eval_config, 
                                                                    generator_config, 
                                                                    callbacks, 
                                                                    logger)
         
-        logger.info(f'Results from running:\n\n{asdict(metrics)}')
+        logger.info(f'Results from running:\n\n{pp.pformat(asdict(metrics))}')
         for metric in callback_metrics: 
-            logger.info(f'Results from callbacks: {asdict(metric)}')
+            logger.info(f'Results from callbacks:\n\n{pp.pformat(asdict(metric))}')

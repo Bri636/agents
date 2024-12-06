@@ -17,7 +17,6 @@ from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 # from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
-from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.gsm8k.types import GSM8KProblem
 
 
@@ -225,9 +224,9 @@ class MutateMCTSWorldReasoner(BaseReasoner):
             answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
             question_prompt.add('user', content=problem)
             answer_prompt.add('user', content=problem)
-
+            
             # If we have previously recorded strategies, apply them
-            for s_idx, strategy in self.strategies.items():
+            for idx, strategy in self.strategies.items():
                 question_prompt.inject_strategy(strategy)
                 answer_prompt.inject_strategy(strategy)
 
@@ -257,139 +256,43 @@ class MutateMCTSWorldReasoner(BaseReasoner):
 
             strategy_prompts: list[Tuple[int, GSMStrategyPromptTemplate]] = []
 
-        for idx, (sample_idx, sample, answer, optimal_path) in enumerate(
-            zip(sample_indices, samples, answers, optimal_paths)
-        ):
-            filtered_answer = self.llm_output_filter(answer)
+            for idx, (sample_idx, sample, answer, optimal_path) in enumerate(
+                zip(sample_indices, samples, answers, optimal_paths)
+            ):
+                filtered_answer = self.llm_output_filter(answer)
+                # Check if optimal_path is empty
+                if not optimal_path:
+                    # Handle the no-path scenario: 
+                    # This could mean that MCTS failed to produce any expansions
+                    # You might want to log this or simply continue to the next sample.
+                    messages[idx] = "No optimal path found. MCTS failed to produce a solution."
+                    continue
 
-            # Check if optimal_path is empty
-            if not optimal_path:
-                # Handle the no-path scenario: 
-                # This could mean that MCTS failed to produce any expansions
-                # You might want to log this or simply continue to the next sample.
-                messages[idx] = "No optimal path found. MCTS failed to produce a solution."
-                continue
+                if filtered_answer == 'final_answer':
+                    correct, message = gsm_is_correct(sample_idx, answer, sample)
+                    corrects[idx] = correct
+                    messages[idx] = message
 
-            if filtered_answer == 'final_answer':
-                correct, message = gsm_is_correct(sample_idx, answer, sample)
-                corrects[idx] = correct
-                messages[idx] = message
-
-                if not correct:
-                    # Now it's safe to access optimal_path[-1]
-                    strategy_prompt = GSMStrategyPromptTemplate()
-                    strategy_prompt.add_eval(sample, optimal_path[-1].state, correct)
-                    strategy_prompts.append((sample_idx, strategy_prompt))
-
-            # If we have prompts that need strategies
-            if len(strategy_prompts) > 0:
-                # Extract the templates
-                templates = [p[1] for p in strategy_prompts]
-                # Mutate them to get strategies
-                strategies = self.mutator.batch_mutate(templates)
-
-                # Assign each returned strategy to the corresponding index
-                for (s_idx, _), s in zip(strategy_prompts, strategies):
-                    self.strategies[s_idx] = s
-
+                    if not correct:
+                        breakpoint()
+                        # Now it's safe to access optimal_path[-1]
+                        strategy_prompt: GSMStrategyPromptTemplate = GSMStrategyPromptTemplate()
+                        strategy_prompt.add_eval(sample, optimal_path[-1].state, correct)
+                        strategy_prompts.append((idx, strategy_prompt))
+                # If we have prompts that need strategies
+                if len(strategy_prompts) > 0:
+                    # Extract the templates
+                    templates = [p[1] for p in strategy_prompts]
+                    # Mutate them to get strategies
+                    strategies = self.mutator.batch_mutate(templates)
+                    # Assign each returned strategy to the corresponding index
+                    for (idx, _), strategy in zip(strategy_prompts, strategies):
+                        self.strategies[idx] = strategy
             return True, corrects, messages, panels
 
         except Exception as e:
             messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
             return False, [False] * batch_size, messages, panels
-
-    # def batch_generate_answer(self,
-    #                           sample_indices: list[int],
-    #                           samples: list[dict[str, str]],
-    #                           num_tries: int,
-    #                           num_children: int = 3, 
-    #                           verbose: bool = True
-    #                           ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
-    #     """
-    #     Attempts to generate answers for a batch of samples.
-    #     Returns:
-    #         - A flag indicating if the batch was processed successfully.
-    #         - A list of booleans indicating if each answer was correct.
-    #         - A list of messages for each sample.
-    #         - A list of panels (visualizations) for each sample.
-    #     """
-    #     from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-    #     from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
-    #     from agents.prompts.strategy_prompt import GSMStrategyPromptTemplate
-        
-    #     batch_size = len(samples)
-    #     corrects = [False] * batch_size
-    #     messages = ['Answer incorrect or failed to generate for question.'] * batch_size
-    #     panels = [None] * batch_size
-
-    #     roots: list[BTMCTSNode] = []
-    #     for idx in range(batch_size): 
-    #         # prime the prompts with the problem
-    #         problem: GSM8KProblem = samples[idx]['question']
-    #         question_prompt: BasePromptTemplate = copy.deepcopy(self.question_prompt)
-    #         answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
-    #         question_prompt.add('user', content=problem)
-    #         answer_prompt.add('user', content=problem)
-            
-    #         # injecting the strategies each time via idx matching
-    #         if self.strategies: 
-    #             for idx, strategy in self.strategies.items(): 
-    #                 question_prompt.inject_strategy(strategy)
-    #                 answer_prompt.inject_strategy(strategy)
-            
-    #         root = BTMCTSNode(
-    #             state=question_prompt,
-    #             action=None,
-    #             reward=None,
-    #             parent=None,
-    #             is_terminal=False
-    #         )
-    #         roots.append(root)
-
-    #     # note - we deepcopy to prevent over-writing question_prompt
-    #     mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt), 
-    #                      answer_prompt_base=copy.deepcopy(answer_prompt))
-
-    #     try: 
-    #         answers, optimal_paths, panels = mcts.batch_guess_answer(roots, 
-    #                                                             self.actor, 
-    #                                                             self.world_model, 
-    #                                                             num_children=num_children, 
-    #                                                             samples=samples, 
-    #                                                             sample_indices=sample_indices, 
-    #                                                             max_tries=num_tries
-    #                                                             )
-            
-    #         strategy_prompts: list[Tuple[int, GSMStrategyPromptTemplate]] = []
-            
-    #         for idx, (sample_idx, sample, answer, optimal_path) in enumerate(
-    #             zip(sample_indices, samples, answers, optimal_paths)): 
-                
-    #             filtered_answer = self.llm_output_filter(answer)
-    #             if filtered_answer == 'final_answer':
-    #                     correct, message = gsm_is_correct(sample_idx, answer, sample)
-    #                     # update containers
-    #                     corrects[idx] = correct
-    #                     messages[idx] = message
-                        
-    #                     if correct == False: 
-    #                         strategy_prompt = GSMStrategyPromptTemplate()
-    #                         strategy_prompt.add_eval(sample, optimal_path[-1].state.history, correct)
-    #                         strategy_prompts.append((idx, strategy_prompt))
-            
-    #         if len(self.strategy_prompts)>=1: 
-    #             strategies: list[str] = self.mutator.batch_mutate(strategy_prompts)
-                        
-    #         # mutate the answer here       
-    #         for idx, strategy in strategies: 
-    #             self.strategies[idx] = strategy_prompt      
-            
-    #         return True, corrects, messages, panels
-            
-    #     except Exception as e:
-    #         messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
-    #         breakpoint()
-    #         return False, [False] * batch_size, messages, panels # else, False and drop batch 
 
     @classmethod
     def initialize(cls: Self,

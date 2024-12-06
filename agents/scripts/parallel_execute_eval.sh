@@ -17,7 +17,8 @@ BASE_DIR=$(dirname "$SCRIPT_DIR") # Get the base directory
 # CUDA_DEVICES=(0 1 2 3) # Define the list of CUDA devices
 CUDA_DEVICES=(0 1 2 3)
 # DATASET_DIR="$BASE_DIR/data/max_size-2000_num_chunks-4" # Dataset directory for dataset chunks
-DATASET_DIR="$BASE_DIR/data/GSM_max_size-1000_num_chunks-4"
+# /lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/GSM_max_size-1024_num_chunks-4
+DATASET_DIR="$BASE_DIR/data/GSM_max_size-1024_num_chunks-4"
 DATASETS=("$DATASET_DIR"/*.jsonl) # Array of dataset paths
 EVAL_SCRIPT="$BASE_DIR/eval.py" # Eval script path
 LOG_DIR="$BASE_DIR/log_files/"
@@ -45,11 +46,11 @@ for i in "${!CUDA_DEVICES[@]}"; do
     CUDA_VISIBLE_DEVICES=$DEVICE python -W ignore "$EVAL_SCRIPT" \
         --model_path meta-llama/Meta-Llama-3-8B-Instruct \
         --master_config_path "$BASE_DIR/config_files/single_config.yaml" \
-        --num_samples 500 \
+        --num_samples 256 \
         --batch_size 32 \
-        --strategy mutate_mcts_world_model \
+        --strategy mcts_world_model \
         --dtype bfloat16 \
-        --logging_save_path "$LOG_DIR/single_gsm_outputs_device_${DEVICE}_LLAMA3.log" \
+        --logging_save_path "$LOG_DIR/LLAMA_3_single_gsm_outputs_device_${DEVICE}_LLAMA3.log" \
         --dataset_path "$DATASET" &
     # Capture the PID of the process
     PIDS+=($!)
