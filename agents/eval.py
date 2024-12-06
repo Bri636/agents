@@ -11,8 +11,7 @@ from agents.generators import VLLMGeneratorConfig
 from agents.gsm8k import GSM8KProblem, GSMEvaluationConfig, Metrics
 from agents.agent_parsl import PolarisConfig
 from agents.utils import BaseConfig
-from agents.callbacks import (ThroughputCallback, ThroughputMetrics, 
-                              CallbackMetrics, Registered_Callbacks, Callback)
+from agents.callbacks import (GSMThroughputMetrics, CallbackMetrics, Registered_Callbacks, Callback)
 
 T = TypeVar('T')
 
@@ -102,7 +101,8 @@ def parsl_batch_generate_answer(dataset_chunk: list[GSM8KProblem],
 def standard_batch_generate_answer(dataset: list[GSM8KProblem], 
                                    eval_config: GSMEvaluationConfig, 
                                    generator_config: VLLMGeneratorConfig, 
-                                   callbacks: list[Callback]
+                                   callbacks: list[Callback], 
+                                   logger: Optional[logging.Logger] = None
                                    ) -> Tuple[Metrics, list[CallbackMetrics]]: 
     """ Runs standard batch generation """
     from agents.reasoners import BaseReasoner, LLMReasoner, WorldReasoner, MCTSWorldReasoner
@@ -129,7 +129,7 @@ def standard_batch_generate_answer(dataset: list[GSM8KProblem],
         batch_size=eval_config.batch_size,
         num_tries=eval_config.num_tries,
         callbacks=callbacks,
-        logger=None
+        logger=logger
     )
     return metrics, callback_metrics
 
@@ -143,7 +143,7 @@ def parse_args() -> Any:
                             )
     arg_parser.add_argument('--logging_save_path',
                             type=str,
-                            default='./parsl_gsm_outputs.log'
+                            default='/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/log_files/parsl_gsm_outputs.log'
                             )
     arg_parser.add_argument('--master_config_path',
                             type=str,
@@ -180,6 +180,43 @@ if __name__ == "__main__":
     
     from agents.gsm8k import read_jsonl_dataset
     from agents.utils import configure_logger
+    
+    
+    
+    # from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+    # from agents.prompts.strategy_prompt import format_prompt_messages, GSMStrategyPromptTemplate
+    # from agents.prompts.gsm_llama_prompts import BASE, QUESTION, ANSWER
+    # from agents.gsm8k.utils import read_jsonl_dataset
+    
+    # path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
+    # traj = read_jsonl_dataset(path)[0]
+    # # Question 1.1: How many clips did Natalia sell in May?
+    # # Answer 1.1: Natalia sold 48 clips in April and half as many clips in May, so she sold 48 / 2 = 24 clips in May. The answer is 48.
+    # # Question 1.2: Now we can answer the question: How many clips did Natalia sell altogether in April and May?
+    # # Answer 1.2: Natalia sold 48 clips in April and 24 clips in May, so altogether she sold 48 + 24 = 72 clips. The answer is 72 clips.
+    # question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
+    # question_prompt.add(
+    #     **{'role': 'user', 'content': 'Question 1: Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?'})
+    # question_prompt.add(
+    #     **{'role': 'assistant', 'content': 'Question 1.1: How many clips did Natalia sell in May?'})
+    # question_prompt.add(
+    #     **{'role': 'user', 'content': 'Answer 1.1: Natalia sold 48 clips in April and half as many clips in May, so she sold 48 / 2 = 24 clips in May. The answer is 48.'})
+    # question_prompt.add(
+    #     **{'role': 'assistant', 'content': 'Question 1.2: Now we can answer the question: How many clips did Natalia sell altogether in April and May?'})
+    # question_prompt.add(
+    #     **{'role': 'user', 'content': 'Answer 1.2: Natalia sold 48 clips in April and 24 clips in May, so altogether she sold 48 + 24 = 72 clips. The answer is 72 clips.'})
+    # prompt = GSMStrategyPromptTemplate()
+    # prompt.add_eval(traj, question_prompt, False)
+    # config = VLLMGeneratorConfig()
+    # from agents.generators.vllm_generator import VLLMGenerator
+    # from reasoners.wm_mutate_mcts import Mutator
+    # generator = VLLMGenerator(config)
+    # mutator = Mutator(generator)
+    # # generator.batch
+    # prompts = [prompt] * 2
+    
+    # strategies = mutator.batch_mutate(prompts)
+    
 
     args = parse_args()
     master_config = MasterConfig.from_yaml(args.master_config_path)
@@ -197,7 +234,7 @@ if __name__ == "__main__":
     logger = configure_logger('info', logging_save_path=args.logging_save_path)
     dataset = read_jsonl_dataset(master_config.dataset_path)
     dataset = truncate_dataset(dataset, eval_config.batch_size)
-    callbacks = ThroughputCallback()
+    callbacks: list[Callback] = [callback_cls() for callback_cls in Registered_Callbacks.values()]
     
     if args.use_parsl: 
         parsl_config = master_config.parsl_config.get_config(
@@ -241,7 +278,8 @@ if __name__ == "__main__":
         metrics, callback_metrics = standard_batch_generate_answer(dataset, 
                                                                    eval_config, 
                                                                    generator_config, 
-                                                                   callbacks)
+                                                                   callbacks, 
+                                                                   logger)
         
         logger.info(f'Results from running:\n\n{asdict(metrics)}')
         for metric in callback_metrics: 

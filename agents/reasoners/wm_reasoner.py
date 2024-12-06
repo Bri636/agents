@@ -5,7 +5,6 @@ from typing import Callable, Any, Tuple, Optional, Self
 from rich.panel import Panel
 import copy
 
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
@@ -253,7 +252,8 @@ class WorldReasoner(BaseReasoner):
                    generator: BaseLLMGenerator,
                    filter_output_func: Callable = filter_output_type
                    ) -> Self:
-
+        from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+        
         question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
         answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
 

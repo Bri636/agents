@@ -9,6 +9,7 @@ from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
+
 Prompt = Union[BasePromptTemplate, GSMLlamaPromptTemplate]
 """ Prompt for an agent """
 

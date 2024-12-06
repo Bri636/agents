@@ -13,10 +13,13 @@ from agents.prompts import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
-from agents.gsm8k.types import GSM8KProblem
-from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
+
+# from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
+from agents.gsm8k.types import GSM8KProblem
+
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -38,14 +41,19 @@ class WorldModel:
                 'log_probs': sub_answer['log_probs'],
                 }
         
-    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict]:
+    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
         """ Batch generates the next state with log probabilities """
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
         """
         answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
         sub_answers = self.generator.generate_with_logprobs(answer_inputs)
-        return [{'text': ans['text'][0], 'log_probs': ans['log_probs']} for ans in sub_answers]
+        
+        texts = [sub_answer for sub_answer in sub_answers['text']]
+        log_probs = [log_prob for log_prob in sub_answers['log_probs']]
+
+        return [{'text': text, 'log_probs': log_prob} 
+                for text, log_prob in zip(texts, log_probs)]
 
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
@@ -53,6 +61,7 @@ class WorldModel:
 
 class Actor:
     def __init__(self, generator: BaseLLMGenerator) -> None:
+
         self.generator = generator
 
     def act(self, question_prompt: BasePromptTemplate) -> str:
@@ -60,6 +69,13 @@ class Actor:
         sub_question = self.generator.generate(question_prompt.preprocess())[0]
 
         return sub_question
+    
+    def batch_act(self, question_prompts: list[BasePromptTemplate]) -> list[str]:
+        """ Batch returns the next sub_question to ask """
+        question_inputs: list[list[dict]] = [question_prompt.preprocess()
+                                             for question_prompt in question_prompts]  # each sub-list is a chat buffer
+        sub_questions = self.generator.generate(question_inputs)
+        return sub_questions
 
     def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
@@ -72,26 +88,58 @@ class Actor:
                 'token_seq': sub_question['token_seq'],
                 'log_probs': sub_question['log_probs'],
                 }
-        
-    def heuristic_expansion(self, expansion_prompt: BasePromptTemplate, question_prompt: BasePromptTemplate): 
-        ...
+
+    def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
+        return self.generator.prompt_exceeds_limit(prompts.preprocess())
+    
+def extract_strategy(input_list: list[str]) -> list[str]:
+    parsed_list = []
+    for item in input_list:
+        # Split the string by "** Strategy **"
+        parts = item.split("** Strategy **")
+        if len(parts) > 1:  # Check if "** Strategy **" exists in the string
+            # Strip leading/trailing whitespace from the strategy part and append it to the result
+            parsed_list.append(parts[1].strip())
+    return parsed_list
+    
+class Mutator: 
+    def __init__(self, generator: BaseLLMGenerator, parser: Callable = extract_strategy) -> None:
+
+        self.generator = generator
+        self.parser = parser
+
+    def act(self, strategy_prompt: BasePromptTemplate) -> str:
+        """ Returns the next sub_question to ask"""
+        sub_question = self.generator.generate(strategy_prompt.preprocess())[0]
+
+        return sub_question
+    
+    def batch_mutate(self, strategy_prompts: list[BasePromptTemplate]) -> list[str]:
+        """ Batch returns the next sub_question to ask """
+        strategy_inputs: list[list[dict]] = [strategy_prompt.preprocess()
+                                             for strategy_prompt in strategy_prompts]  # each sub-list is a chat buffer
+        strategy_raws = self.generator.generate(strategy_inputs)
+        strategies = self.parser(strategy_raws)
+        return strategies
+
+    def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
+        """ Returns the next sub_question to ask"""
+        assert isinstance(self.generator, VLLMGenerator), f"""
+        LogProbs only supported with VLLM for now...
+        """
+        sub_question = self.generator.generate_with_logprobs(
+            question_prompt.preprocess())
+        return {'text': sub_question['text'][0],
+                'token_seq': sub_question['token_seq'],
+                'log_probs': sub_question['log_probs'],
+                }
 
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
-class Reflection: 
-    """ Reflects on the output of action agent by comparing reasoning trace from mcts with gold reasoning trace """
-    def __init__(self, generator: BaseLLMGenerator) -> None:
-        self.generator = generator
-        
-    def generate_strategy(self, estimated_trace, gold_trace) -> str:
-        ...
-        
-    def mutate(self): 
-        ...
 
-@BaseReasoner.register(name='mutated_mcts_world_model')
-class MutatedMCTSWorldReasoner(BaseReasoner):
+@BaseReasoner.register(name='mutate_mcts_world_model')
+class MutateMCTSWorldReasoner(BaseReasoner):
 
     def __init__(self,
                  generator: BaseLLMGenerator,
@@ -103,13 +151,12 @@ class MutatedMCTSWorldReasoner(BaseReasoner):
 
         self.actor = Actor(generator)
         self.world_model = WorldModel(generator)
-        self.reflection = Reflection(generator)
-        
+        self.mutator = Mutator(generator)
         self.answer_prompt = answer_prompt
         self.question_prompt = question_prompt
         self.llm_output_filter = llm_output_filter
         
-    def mutate_strategy(self, trace: list[B])
+        self.strategies: dict[int, str] = {}
 
     def generate_answer(self,
                         idx: int,
@@ -148,44 +195,41 @@ class MutatedMCTSWorldReasoner(BaseReasoner):
                                                             )
             if self.llm_output_filter(answer) == 'final_answer':
                 correct, message = gsm_is_correct(idx, answer, sample)
-                
-            if not correct: 
-                strategy = self.reflection()
-
             generated = True
             return generated, correct, message, panel
 
         except Exception as e:
             return generated, correct, message, panel
-
+        
+        
     def batch_generate_answer(self,
-                              indices: list[int],
-                              samples: list[dict[str, str]],
-                              num_tries: int,
-                              num_children: int = 3
-                              ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
-        """
-        Attempts to generate answers for a batch of samples.
-        Returns:
-            - A flag indicating if the batch was processed successfully.
-            - A list of booleans indicating if each answer was correct.
-            - A list of messages for each sample.
-            - A list of panels (visualizations) for each sample.
-        """
+                          sample_indices: list[int],
+                          samples: list[dict[str, str]],
+                          num_tries: int,
+                          num_children: int = 3, 
+                          verbose: bool = True
+                          ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
+        from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
+        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+        from agents.prompts.strategy_prompt import GSMStrategyPromptTemplate
+
         batch_size = len(samples)
-        generated = [False] * batch_size
-        correct = [False] * batch_size
+        corrects = [False] * batch_size
         messages = ['Answer incorrect or failed to generate for question.'] * batch_size
         panels = [None] * batch_size
 
-        # Initialize MCTS instances and roots for each sample
-        roots = []
+        roots: list[BTMCTSNode] = []
         for idx in range(batch_size):
-            question = samples[idx]['question']
-            question_prompt = copy.deepcopy(self.question_prompt)
-            answer_prompt = copy.deepcopy(self.answer_prompt)
-            question_prompt.add('user', content=question)
-            answer_prompt.add('user', content=question)
+            problem: GSM8KProblem = samples[idx]['question']
+            question_prompt: BasePromptTemplate = copy.deepcopy(self.question_prompt)
+            answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
+            question_prompt.add('user', content=problem)
+            answer_prompt.add('user', content=problem)
+
+            # If we have previously recorded strategies, apply them
+            for s_idx, strategy in self.strategies.items():
+                question_prompt.inject_strategy(strategy)
+                answer_prompt.inject_strategy(strategy)
 
             root = BTMCTSNode(
                 state=question_prompt,
@@ -196,49 +240,156 @@ class MutatedMCTSWorldReasoner(BaseReasoner):
             )
             roots.append(root)
 
-        mcts = BatchMCTS(
-                question_prompt_base=question_prompt,
-                answer_prompt_base=answer_prompt
+        # We deepcopy to avoid overwriting the originals
+        mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt),
+                        answer_prompt_base=copy.deepcopy(answer_prompt))
+
+        try:
+            answers, optimal_paths, panels = mcts.batch_guess_answer(
+                roots,
+                self.actor,
+                self.world_model,
+                num_children=num_children,
+                samples=samples,
+                sample_indices=sample_indices,
+                max_tries=num_tries
             )
-        ############### mine 
-        # NOTE - expansion and simulation must take in different questions for them to be batched
-        # aka one mcts interface per batch
-        answer, optimal_path, panels = mcts.batch_guess_answer(roots, 
-                                                               self.actor, 
-                                                               self.world_model, 
-                                                               num_children=3, 
-                                                               samples=samples, 
-                                                               sample_indices=indices, 
-                                                               max_tries=5
-                                                               )
+
+            strategy_prompts: list[Tuple[int, GSMStrategyPromptTemplate]] = []
+
+        for idx, (sample_idx, sample, answer, optimal_path) in enumerate(
+            zip(sample_indices, samples, answers, optimal_paths)
+        ):
+            filtered_answer = self.llm_output_filter(answer)
+
+            # Check if optimal_path is empty
+            if not optimal_path:
+                # Handle the no-path scenario: 
+                # This could mean that MCTS failed to produce any expansions
+                # You might want to log this or simply continue to the next sample.
+                messages[idx] = "No optimal path found. MCTS failed to produce a solution."
+                continue
+
+            if filtered_answer == 'final_answer':
+                correct, message = gsm_is_correct(sample_idx, answer, sample)
+                corrects[idx] = correct
+                messages[idx] = message
+
+                if not correct:
+                    # Now it's safe to access optimal_path[-1]
+                    strategy_prompt = GSMStrategyPromptTemplate()
+                    strategy_prompt.add_eval(sample, optimal_path[-1].state, correct)
+                    strategy_prompts.append((sample_idx, strategy_prompt))
+
+            # If we have prompts that need strategies
+            if len(strategy_prompts) > 0:
+                # Extract the templates
+                templates = [p[1] for p in strategy_prompts]
+                # Mutate them to get strategies
+                strategies = self.mutator.batch_mutate(templates)
+
+                # Assign each returned strategy to the corresponding index
+                for (s_idx, _), s in zip(strategy_prompts, strategies):
+                    self.strategies[s_idx] = s
+
+            return True, corrects, messages, panels
+
+        except Exception as e:
+            messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
+            return False, [False] * batch_size, messages, panels
+
+    # def batch_generate_answer(self,
+    #                           sample_indices: list[int],
+    #                           samples: list[dict[str, str]],
+    #                           num_tries: int,
+    #                           num_children: int = 3, 
+    #                           verbose: bool = True
+    #                           ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
+    #     """
+    #     Attempts to generate answers for a batch of samples.
+    #     Returns:
+    #         - A flag indicating if the batch was processed successfully.
+    #         - A list of booleans indicating if each answer was correct.
+    #         - A list of messages for each sample.
+    #         - A list of panels (visualizations) for each sample.
+    #     """
+    #     from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
+    #     from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+    #     from agents.prompts.strategy_prompt import GSMStrategyPromptTemplate
         
-        ########### gpt ##############
+    #     batch_size = len(samples)
+    #     corrects = [False] * batch_size
+    #     messages = ['Answer incorrect or failed to generate for question.'] * batch_size
+    #     panels = [None] * batch_size
 
-        # Process MCTS instances
-        for idx in range(batch_size):
-            mcts: BatchMCTS = mcts_instances[idx]
-            root: BTMCTSNode = roots[idx]
-            try:
-                answer, optimal_path, panel = mcts.batch_guess_answer(
-                    root=root,
-                    actor=self.actor,
-                    world_model=self.world_model,
-                    sample=samples[idx],
-                    sample_idx=indices[idx],
-                    max_tries=num_tries,
-                    num_children=num_children,
-                    verbose=False  # Set to True if needed
-                )
-                if self.llm_output_filter(answer) == 'final_answer':
-                    correct[idx], message = gsm_is_correct(indices[idx], answer, samples[idx])
-                    messages[idx] = message
-                generated[idx] = True
-                panels[idx] = panel
-            except Exception as e:
-                messages[idx] = f"Error processing sample {indices[idx]}: {e}"
+    #     roots: list[BTMCTSNode] = []
+    #     for idx in range(batch_size): 
+    #         # prime the prompts with the problem
+    #         problem: GSM8KProblem = samples[idx]['question']
+    #         question_prompt: BasePromptTemplate = copy.deepcopy(self.question_prompt)
+    #         answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
+    #         question_prompt.add('user', content=problem)
+    #         answer_prompt.add('user', content=problem)
+            
+    #         # injecting the strategies each time via idx matching
+    #         if self.strategies: 
+    #             for idx, strategy in self.strategies.items(): 
+    #                 question_prompt.inject_strategy(strategy)
+    #                 answer_prompt.inject_strategy(strategy)
+            
+    #         root = BTMCTSNode(
+    #             state=question_prompt,
+    #             action=None,
+    #             reward=None,
+    #             parent=None,
+    #             is_terminal=False
+    #         )
+    #         roots.append(root)
 
-        overall_success = all(generated)
-        return overall_success, correct, messages, panels
+    #     # note - we deepcopy to prevent over-writing question_prompt
+    #     mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt), 
+    #                      answer_prompt_base=copy.deepcopy(answer_prompt))
+
+    #     try: 
+    #         answers, optimal_paths, panels = mcts.batch_guess_answer(roots, 
+    #                                                             self.actor, 
+    #                                                             self.world_model, 
+    #                                                             num_children=num_children, 
+    #                                                             samples=samples, 
+    #                                                             sample_indices=sample_indices, 
+    #                                                             max_tries=num_tries
+    #                                                             )
+            
+    #         strategy_prompts: list[Tuple[int, GSMStrategyPromptTemplate]] = []
+            
+    #         for idx, (sample_idx, sample, answer, optimal_path) in enumerate(
+    #             zip(sample_indices, samples, answers, optimal_paths)): 
+                
+    #             filtered_answer = self.llm_output_filter(answer)
+    #             if filtered_answer == 'final_answer':
+    #                     correct, message = gsm_is_correct(sample_idx, answer, sample)
+    #                     # update containers
+    #                     corrects[idx] = correct
+    #                     messages[idx] = message
+                        
+    #                     if correct == False: 
+    #                         strategy_prompt = GSMStrategyPromptTemplate()
+    #                         strategy_prompt.add_eval(sample, optimal_path[-1].state.history, correct)
+    #                         strategy_prompts.append((idx, strategy_prompt))
+            
+    #         if len(self.strategy_prompts)>=1: 
+    #             strategies: list[str] = self.mutator.batch_mutate(strategy_prompts)
+                        
+    #         # mutate the answer here       
+    #         for idx, strategy in strategies: 
+    #             self.strategies[idx] = strategy_prompt      
+            
+    #         return True, corrects, messages, panels
+            
+    #     except Exception as e:
+    #         messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
+    #         breakpoint()
+    #         return False, [False] * batch_size, messages, panels # else, False and drop batch 
 
     @classmethod
     def initialize(cls: Self,

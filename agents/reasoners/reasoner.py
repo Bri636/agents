@@ -93,6 +93,8 @@ class LLMReasoner(BaseReasoner):
                                 for sample in batched_samples]
         prompts: list[BasePromptTemplate] = [copy.deepcopy(self.prompt)
                                              for _ in range(batch_size)]
+        
+        # REPLACE
         for question, prompt in zip(questions, prompts):
             prompt.add(**{'role': 'user', 'content': question})
             

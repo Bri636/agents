@@ -10,13 +10,13 @@ from agents.generators import BaseLLMGenerator
 from agents.generators.vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
 
 # from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-# from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+# from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.gsm8k.types import GSM8KProblem
 
 
@@ -225,7 +225,7 @@ class MCTSWorldReasoner(BaseReasoner):
                    generator: BaseLLMGenerator,
                    filter_output_func: Callable = filter_output_type
                    ) -> Self:
-
+        from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
         question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
         answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
 

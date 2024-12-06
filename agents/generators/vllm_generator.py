@@ -86,14 +86,15 @@ class VLLMGenerator(BaseLLMGenerator):
         # Create an LLM instance
         self.llm = LLM(
             model=config.llm_name,
-            trust_remote_code=config.trust_remote_code,
+            trust_remote_code=config.trust_remote_code, # NOTE: Fix to True 
             dtype=config.dtype,
             tensor_parallel_size=config.tensor_parallel_size,
         )
 
         # inference  attr
         self.use_tqdm = config.use_tqdm
-        self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name, 
+                                                       trust_remote_code=config.trust_remote_code)
         self.max_tokens = self.tokenizer.model_max_length
 
     def prompt_exceeds_limit(self, prompts: dict[str, str] | list[dict[str, str]]) -> bool:

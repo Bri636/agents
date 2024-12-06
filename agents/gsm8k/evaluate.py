@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Callable, Tuple, Any, Optional, Literal, Union
 import random
-import time
+import time, os
 from tqdm import tqdm
 from tqdm.rich import tqdm
 from dataclasses import dataclass, asdict
@@ -11,18 +11,19 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 import logging
+import pprint as pp
 
-from agents.gsm8k.utils import read_jsonl_dataset, filter_output_type, gsm_is_correct
-from agents.generators.base_generator import BaseLLMGenerator
-from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-from agents.prompts.standard_prompt import StandardGSMPromptTemplate
+# from agents.gsm8k.utils import read_jsonl_dataset, filter_output_type, gsm_is_correct
+# from agents.generators.base_generator import BaseLLMGenerator
+# from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
+# from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+# from agents.prompts.standard_prompt import StandardGSMPromptTemplate
 from agents.reasoners.base_reasoner import BaseReasoner
-from agents.reasoners.reasoner import LLMReasoner
-from agents.reasoners.wm_reasoner import WorldReasoner
-from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
-from agents.utils import BaseConfig, register_strategy
-from agents.callbacks import ThroughputCallback, ThroughputMetrics, BatchMetrics
+# from agents.reasoners.reasoner import LLMReasoner
+# from agents.reasoners.wm_reasoner import WorldReasoner
+# from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
+# from agents.utils import BaseConfig, register_strategy
+# from agents.callbacks import GSMThroughputMetrics, GSMBatchMetrics
 # import types
 from agents.gsm8k import T
 from agents.callbacks import Callback, CallbackMetrics, Registered_Callbacks
@@ -111,7 +112,7 @@ def batch_gsm_evaluate(
     """ Performs batched evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
     from agents.utils import batch_data_with_indices
     from agents.gsm8k.types import GSM8KProblem
-    from agents.callbacks.callbacks import ThroughputCallback, ThroughputMetrics
+    from agents.callbacks.callbacks import ThroughputCallback, GSMThroughputMetrics
 
     # setting up and double checking callback stuff
     assert num_samples % batch_size == 0, f'''
@@ -119,7 +120,7 @@ Num_samples is not divisible by batch_size !'''
     random.seed(seed)
     
     if not isinstance(callbacks, list): 
-        callbacks = [callbacks]
+        callbacks: list[Callback] = [callbacks]
     
     # for if batch_size is larger than num_samples
     num_samples = max(num_samples, batch_size)
@@ -173,12 +174,18 @@ Num_samples is not divisible by batch_size !'''
                 expand=True
             )
             # logging statistics
-            [callback.on_batch_end(batch_idx=batch_idx, batch_size=batch_size) 
+            # NOTE - is num_batches the same as num_steps?
+            [callback.on_batch_end(batch_idx=batch_idx, batch_size=batch_size, num_steps=num_batches) 
              for callback in callbacks]
+            
+            batch_metrics: list[dict] = [asdict(callback.return_metrics()) for callback in callbacks]
+            
             if logger: 
-                logger.info(f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
+                logger.info(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
+                logger.info(f"Device {os.environ.get('CUDA_VISIBLE_DEVICES')}: {num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
             else:
                 print(f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
+                print(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
             console.print(panel_summ)
             progress_bar.update(1)
 

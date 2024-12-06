@@ -81,4 +81,7 @@ class BasePromptTemplate(ABC):
         prompt : BasePromptTemplate
             The instance from which to copy the prompt and history.
         """
+        
+    def inject_strategy(self) -> None: 
+        """Optional """
     

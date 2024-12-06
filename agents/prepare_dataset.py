@@ -100,7 +100,7 @@ def parse_args() -> DatasetChunkConfig:
     arg_parser.add_argument('--dataset_name_or_path', type=str, default='/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl')
     arg_parser.add_argument('--dataset_chunks_save_path', type=str, default='/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/')
     arg_parser.add_argument('--num_chunks', type=int, default=4)
-    arg_parser.add_argument('--max_size_per_chunk', type=int, default=500)
+    arg_parser.add_argument('--max_size_per_chunk', type=int, default=250)
     arg_parser.add_argument('--seed', type=int, default=10)
     arg_parser.add_argument('--logging', action='store_true')
     

@@ -6,8 +6,8 @@ from typing import Union, TypeVar
 from agents import prompt_registry
 from agents.registry import import_submodules
 from agents.prompts.base_prompt_template import BasePromptTemplate
-
-import_submodules(__name__) # trigger import of submodules of this module so we auto-register classes
+from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+# import_submodules(__name__) # trigger import of submodules of this module so we auto-register classes
 
 # ActionAgentPrompts = Union[
 #     tuple(elem['class'] for elem in prompt_registry._registry.values())

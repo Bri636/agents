@@ -2,22 +2,17 @@
 Class for constructing in Llama prompts for LLama-3 Vllm Chat Models 
 """
 from __future__ import annotations
-import json
-import re
-import os
 import random
 from typing import TypedDict, TypeVar, Optional, Any, Callable, Literal, Tuple, List
 from textwrap import dedent
 import itertools
 import pprint as pp
-from enum import Enum
 import copy
 from dataclasses import dataclass
 
-from agents.utils import BaseConfig
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.gsm_llama_prompts import BASE, QUESTION, ANSWER
-from agents.gsm8k.utils import read_jsonl_dataset
+from agents.gsm8k.types import GSM8KProblem
 
 class GSM8kPromptDict(TypedDict):
     """ Stores the Components for the Prompt """
@@ -143,6 +138,14 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
     def history(self) -> List[PromptMessage]:
         """Returns a copy of the change history to prevent in-place modification."""
         return copy.deepcopy(self._history)
+    
+    # def load_question(self, question: str | GSM8KProblem) -> None: 
+    #     """ Concats the GSM problem to the first user prompt directly so we can use mistral """
+    #     if isinstance(question, GSM8KProblem): 
+    #         question: str = question['question']
+    #     'Question: '
+    #     self._history[-1].content += question 
+    #     ...
 
     def add(self, role: Literal['user', 'assistant', 'system'], content: str) -> None:
         """Add a new message to the prompt."""
@@ -201,6 +204,6 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         self._history.extend(swapped_history)
         self._prompt.extend(swapped_history)
         
-        
-    def inject_strategy(): 
-        ...
+    def inject_strategy(self, strategy: str) -> None: 
+        """ Takes the Strategy from the StrategyLM and then injects it into the system prompt. """
+        self._history[-1].content += f'\n{strategy}'
