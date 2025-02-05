@@ -63,6 +63,24 @@ def split_dataset(dataset: list[GSM8KProblem], num_chunks: int, batch_size: int)
 
     return [dataset[i * chunk_size: (i + 1) * chunk_size] 
             for i in range(num_chunks)]
+    
+    
+def calculate_average_seconds_per_sample(data):
+    """
+    Calculates the average seconds per sample from the given data.
+
+    Parameters:
+        data (dict): Dictionary containing 'batch_metrics' with batch details.
+
+    Returns:
+        float: Average seconds per sample across all batches.
+    """
+    # Extract the 'seconds_per_sample' values from each batch
+    seconds_per_sample = [batch['seconds_per_sample'] for batch in data['batch_metrics']]
+    
+    # Calculate the average
+    average_seconds = sum(seconds_per_sample) / len(seconds_per_sample)
+    return average_seconds
 
 
 @python_app
@@ -283,5 +301,7 @@ if __name__ == "__main__":
                                                                    logger)
         
         logger.info(f'Results from running:\n\n{pp.pformat(asdict(metrics))}')
+        # average_per_sample = calculate_average_seconds_per_sample(metrics)
+        # logger.info(f'Average Per Sample:\n\n{average_per_sample}')
         for metric in callback_metrics: 
             logger.info(f'Results from callbacks:\n\n{pp.pformat(asdict(metric))}')

@@ -118,6 +118,11 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
             'agent_type': agent_type
         }
         
+        # CHANGE: Store the original last message's content only once here.
+        if self._prompt:
+            self._original_last_message = self._prompt[-1].content
+        
+        
     @classmethod
     def make_from_prompt(cls: T, prompt: GSMLlamaPromptTemplate) -> T: 
         """ Creates a prompt from the kwargs of another prompt """
@@ -138,14 +143,6 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
     def history(self) -> List[PromptMessage]:
         """Returns a copy of the change history to prevent in-place modification."""
         return copy.deepcopy(self._history)
-    
-    # def load_question(self, question: str | GSM8KProblem) -> None: 
-    #     """ Concats the GSM problem to the first user prompt directly so we can use mistral """
-    #     if isinstance(question, GSM8KProblem): 
-    #         question: str = question['question']
-    #     'Question: '
-    #     self._history[-1].content += question 
-    #     ...
 
     def add(self, role: Literal['user', 'assistant', 'system'], content: str) -> None:
         """Add a new message to the prompt."""
@@ -206,4 +203,7 @@ class GSMLlamaPromptTemplate(BasePromptTemplate):
         
     def inject_strategy(self, strategy: str) -> None: 
         """ Takes the Strategy from the StrategyLM and then injects it into the system prompt. """
-        self._history[-1].content += f'\n{strategy}'
+        # CHANGE: We no longer reassign `_original_last_message` here.
+        # Instead, we directly set the last message based on the already stored original content.
+        # self._history[-1].content = f"{self._original_last_message}\n{strategy}"
+        self._prompt[0].content = f'{self._prompt[0].content}\n{strategy}'

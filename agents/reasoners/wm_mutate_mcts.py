@@ -229,6 +229,11 @@ class MutateMCTSWorldReasoner(BaseReasoner):
             for idx, strategy in self.strategies.items():
                 question_prompt.inject_strategy(strategy)
                 answer_prompt.inject_strategy(strategy)
+                # if idx == 1: 
+                #     import pprint as pp
+                #     pp.pprint(strategy)
+                #     pp.pprint(question_prompt)
+                #     pp.pprint(answer_prompt)
 
             root = BTMCTSNode(
                 state=question_prompt,
@@ -274,7 +279,6 @@ class MutateMCTSWorldReasoner(BaseReasoner):
                     messages[idx] = message
 
                     if not correct:
-                        breakpoint()
                         # Now it's safe to access optimal_path[-1]
                         strategy_prompt: GSMStrategyPromptTemplate = GSMStrategyPromptTemplate()
                         strategy_prompt.add_eval(sample, optimal_path[-1].state, correct)
@@ -288,6 +292,7 @@ class MutateMCTSWorldReasoner(BaseReasoner):
                     # Assign each returned strategy to the corresponding index
                     for (idx, _), strategy in zip(strategy_prompts, strategies):
                         self.strategies[idx] = strategy
+
             return True, corrects, messages, panels
 
         except Exception as e:

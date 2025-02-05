@@ -111,6 +111,7 @@ At each round of conversation, I will give you a math problem to solve, along wi
 Your goal is to reflect on why my answer is wrong, and provide a very high level strategy for how to improve on my problem solving skills.
 First, return a reflection on what went wrong with the problem, being specific and thorough. Then, return a high-level strategy so that I can avoid this mistake in the future. 
 While you can think critically about the problem at hand, the final strategy you return must be agnostic to the problem since I will use your strategy for other different math problems. Keep your strategy as one string.
+ONLY make strategies for how to answer sub-questions, and not how to ask questions.
 
 Return your reflection on what went wrong with the following format: 
 ** Reflection **\n

@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Function to handle cleanup on error or termination
-cleanup() {
-    echo "Error occurred or script terminated. Cleaning up..."
-    # Kill all background jobs
-    kill 0
-    exit 1
-}
+# cleanup() {
+#     echo "Error occurred or script terminated. Cleaning up..."
+#     # Kill all background jobs
+#     kill 0
+#     exit 1
+# }
 
-# Trap signals and errors to execute the cleanup function
-trap cleanup SIGINT SIGTERM ERR
+# # Trap signals and errors to execute the cleanup function
+# trap cleanup SIGINT SIGTERM ERR
 
 # Establishing all of the variables
 SCRIPT_DIR=$(pwd) # Get the current directory of scripts
@@ -18,10 +18,11 @@ BASE_DIR=$(dirname "$SCRIPT_DIR") # Get the base directory
 CUDA_DEVICES=(0 1 2 3)
 # DATASET_DIR="$BASE_DIR/data/max_size-2000_num_chunks-4" # Dataset directory for dataset chunks
 # /lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/GSM_max_size-1024_num_chunks-4
-DATASET_DIR="$BASE_DIR/data/GSM_max_size-1024_num_chunks-4"
+# agents/data/GSM_max_size-1000_num_chunks-4
+DATASET_DIR="$BASE_DIR/data/GSM_max_size-1000_num_chunks-4"
 DATASETS=("$DATASET_DIR"/*.jsonl) # Array of dataset paths
 EVAL_SCRIPT="$BASE_DIR/eval.py" # Eval script path
-LOG_DIR="$BASE_DIR/log_files/"
+LOG_DIR="$BASE_DIR/final_log/mutate/"
 
 # Ensure the number of devices matches the number of datasets
 if [[ ${#DATASETS[@]} -ne ${#CUDA_DEVICES[@]} ]]; then
@@ -48,9 +49,9 @@ for i in "${!CUDA_DEVICES[@]}"; do
         --master_config_path "$BASE_DIR/config_files/single_config.yaml" \
         --num_samples 256 \
         --batch_size 32 \
-        --strategy mcts_world_model \
+        --strategy mutate_mcts_world_model \
         --dtype bfloat16 \
-        --logging_save_path "$LOG_DIR/LLAMA_3_single_gsm_outputs_device_${DEVICE}_LLAMA3.log" \
+        --logging_save_path "$LOG_DIR/1_try_gsm_outputs_device_${DEVICE}_LLAMA3.log" \
         --dataset_path "$DATASET" &
     # Capture the PID of the process
     PIDS+=($!)
