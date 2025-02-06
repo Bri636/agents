@@ -25,11 +25,9 @@ def create_directory_if_not_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-
 class GenerateOutput(NamedTuple):
     text: list[str]
     log_prob: Optional[list[np.ndarray]] = None
-
 
 class LanguageModel(ABC):
     @abstractmethod
@@ -137,7 +135,6 @@ class DefaultWorldModel(WorldModel):
         # By default the state is never terminal
         return False
 
-
 class SearchConfig(ABC, Generic[State, Action, Example]):
     def __init__(self) -> None:
         self.example = None
@@ -157,13 +154,11 @@ class SearchConfig(ABC, Generic[State, Action, Example]):
             self.prompt = prompt
         self.example = example
 
-
 @runtime_checkable
 class AlgorithmOutput(Protocol[State]):
     terminal_state: State
     trace: Trace
-
-
+    
 class SearchAlgorithm(ABC):
     def __init__(self, **kwargs): ...
 

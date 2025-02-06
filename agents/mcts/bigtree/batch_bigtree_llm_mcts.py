@@ -25,7 +25,6 @@ from agents.gsm8k import GSM8KProblem
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
-
 def win_lose(win: bool,
              win_reward: float = 100,
              lose_reward: float = -50
