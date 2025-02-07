@@ -7,13 +7,13 @@ from typing import TypeVar, Union, Callable
 
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+# from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
 
-Prompt = Union[BasePromptTemplate, GSMLlamaPromptTemplate]
+Prompt = Union[BasePromptTemplate]
 """ Prompt for an agent """
 
-State = Union[BasePromptTemplate, GSMLlamaPromptTemplate]
+State = Union[BasePromptTemplate]
 """ State of a node Also corresponds to Prompt in this case """
 
 Action = str

@@ -6,7 +6,7 @@ from rich.panel import Panel
 import copy
 
 from agents.generators import BaseLLMGenerator
-from agents.generators.vllm_generator import VLLMGenerator
+from agents.generators.new_vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct

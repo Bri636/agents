@@ -24,7 +24,7 @@ from agents.mcts.base import (SearchAlgorithm, WorldModel, SearchConfig,
                                                 State, Action, Example, Trace)
 from agents.utils import calculate_returns
 from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
+# from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 import gymnasium as gym 
 import ale_py
 from rich.pretty import pprint as rpprint
@@ -32,7 +32,7 @@ import pprint as pp
 
 from bigtree.node.node import Node
 
-LLMNodeState = Union[BasePromptTemplate, GSMLlamaPromptTemplate]
+LLMNodeState = Union[BasePromptTemplate]
 """ BasePromptTemplate or GSMLLamaPromptTemplate"""
 
 LLMNodeAction = str

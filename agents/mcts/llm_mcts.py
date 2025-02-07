@@ -547,7 +547,7 @@ if __name__ == "__main__":
     from agents.reasoners.wm_reasoner import Actor, WorldModel
     from agents.gsm8k.utils import read_jsonl_dataset, batch_sample_gsm
     from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-    from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
+    from agents.generators.new_vllm_generator import VLLMGenerator, VLLMGeneratorConfig
 
     data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
     batch_size = 16

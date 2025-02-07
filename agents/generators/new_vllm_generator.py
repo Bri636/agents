@@ -5,26 +5,32 @@ from __future__ import annotations
 from typing import Literal
 from enum import Enum
 from vllm.sequence import Logprob
-from agents.utils import BaseConfig
-from agents.generators.base_generator import BaseLLMGenerator
 import torch
 import numpy as np
 
+from generators.utils import BaseConfig
+from generators.generators.base_generator import BaseLLMGenerator, GeneratorOutput
+from generators.prompts.chat_prompt import ChatMessageSequence
 
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
+    FALCON7B = 'tiiuae/falcon-7b'
+    FALCON40B = 'tiiuae/falcon-40b'
+    GEMMATWO9B = 'google/gemma-2-9b'
+    GEMMATWO27B = 'google/gemma-2-27b'
     LLAMA3INSTRUCT70B = 'meta-llama/Meta-Llama-3-70B-Instruct'
     LLAMA3170B = 'meta-llama/Meta-Llama-3.1-70B'
     LLAMA38B = 'meta-llama/Meta-Llama-3-8B-Instruct'
     MISTRAL7B = 'mistralai/Mistral-7B-Instruct-v0.1'
     MIXTRAL7X8B = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
+    PHI3MEDIUMINSTRUCT = 'microsoft/Phi-3-medium-128k-instruct'
 
-class VLLMGeneratorConfig(BaseConfig):
+class VLLMConfig(BaseConfig):
     """Configuration for the VLLMGenerator."""
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str = ModelType.LLAMA38B.value
+    llm_name: str = 'meta-llama/Meta-Llama-3-8B-Instruct'
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
@@ -46,10 +52,22 @@ class VLLMGeneratorConfig(BaseConfig):
     dtype: str = 'float16'
 
 
-class VLLMGenerator(BaseLLMGenerator):
+class VLLMGenerator(BaseLLMGenerator, name='vllm', config=VLLMConfig):
     """Language model generator using vllm backend."""
 
-    def __init__(self, config: VLLMGeneratorConfig) -> None:
+    def __init__(self, 
+                 llm_name: str, 
+                 trust_remote_code: bool, 
+                 temperature: float, 
+                 min_p: float, 
+                 top_p: float, 
+                 max_tokens: int, 
+                 use_beam_search: False, 
+                 tensor_parallel_size: int, 
+                 logprobs: int, 
+                 use_tqdm: bool, 
+                 dtype: str
+                 ) -> None:
         """Initialize the VLLMGenerator.
 
         Parameters
@@ -60,36 +78,81 @@ class VLLMGenerator(BaseLLMGenerator):
         from vllm import LLM
         from vllm import SamplingParams
         from transformers import AutoTokenizer
-
+        
+        assert llm_name in list(name.value for name in ModelType), f''' Model {llm_name} is not in supported models: {list(name.value for name in ModelType)}'''
         # Create the sampling params to use
         sampling_kwargs = {}
-        if config.top_p:
-            sampling_kwargs['top_p'] = config.top_p
+        if top_p:
+            sampling_kwargs['top_p'] = top_p
         else:
-            sampling_kwargs['min_p'] = config.min_p
+            sampling_kwargs['min_p'] = min_p
 
         # Create the sampling params to use
         self.sampling_params = SamplingParams(
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            logprobs=config.logprobs,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            logprobs=logprobs,
             # use_beam_search=config.use_beam_search,
             **sampling_kwargs,
         )
         # Create an LLM instance
         self.llm = LLM(
-            model=config.llm_name,
-            trust_remote_code=config.trust_remote_code, # NOTE: Fix to True 
-            dtype=config.dtype,
-            tensor_parallel_size=config.tensor_parallel_size,
+            model=llm_name,
+            trust_remote_code=trust_remote_code, # NOTE: Fix to True 
+            dtype=dtype,
+            tensor_parallel_size=tensor_parallel_size,
         )
 
         # inference  attr
-        self.use_tqdm = config.use_tqdm
-        self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name, 
-                                                       trust_remote_code=config.trust_remote_code)
+        self.use_tqdm = use_tqdm
+        self.tokenizer = AutoTokenizer.from_pretrained(llm_name, 
+                                                       trust_remote_code=trust_remote_code)
         self.max_tokens = self.tokenizer.model_max_length
+        
+    def generate(self, messages: dict | list[dict]) -> GeneratorOutput:
+        """ 
+        Generate response text from one prompt
+        """
+        try: 
+            if isinstance(messages, dict): 
+                messages = [messages]
+            # validation 
+            messages = ChatMessageSequence(messages).as_list() # validation, then convert to list
+            output = self.llm.chat(messages=messages, 
+                                    sampling_params=self.sampling_params,
+                                    use_tqdm=self.use_tqdm)
+            return GeneratorOutput(success=True, 
+                                   output=output[0].outputs[0].text, 
+                                   messages=messages)
+        except Exception as e: 
+            return GeneratorOutput(success=False, 
+                                   output=f'Error: {e}', 
+                                   messages=messages)
+            
+    def batch_generate(self, batch_messages: list[dict] | list[list[dict]]) -> list[GeneratorOutput]:
+        """ 
+        Generate response text from one prompt
+        """
+        if isinstance(batch_messages[0], dict): 
+                batch_messages = [batch_messages]
 
+        try: 
+            batch_messages = [ChatMessageSequence(message).as_list() 
+                              for message in batch_messages] # validation, then convert to list
+            outputs = self.llm.chat(messages=batch_messages, 
+                                    sampling_params=self.sampling_params,
+                                    use_tqdm=self.use_tqdm)
+            return [GeneratorOutput(success=True, 
+                                    output=output.outputs[0].text, 
+                                    messages=message)
+                    for output, message in zip(outputs, batch_messages)]
+            
+        except Exception as e: 
+            return [GeneratorOutput(success=False, 
+                                   output=f'Error: {e}', 
+                                   messages=messages) for messages in batch_messages]
+        
+        
     def prompt_exceeds_limit(self, prompts: dict[str, str] | list[dict[str, str]]) -> bool:
         """Counts the number of tokens in a prompt. If exceeds return True, else False.
         Note that the prompt is a list[dict[str, str]] or dict[str, str] that corresponds to the 
@@ -114,37 +177,6 @@ class VLLMGenerator(BaseLLMGenerator):
         max_context_length = self.tokenizer.model_max_length
 
         return bool(num_tokens > max_context_length)
-
-    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
-        """Generate response text from prompts.
-
-        Parameters
-        ----------
-        prompts : dict[str, str] | list[dict[str, str]]
-            The prompts to generate text from, of form: 
-            [
-                {'user': ..., 
-                'content': ...}, 
-                ...  
-            ]
-
-        Returns
-        -------
-        list[str]
-            A list of responses generated from the prompts
-            (one response per prompt).
-        """
-        # Ensure that the prompts are in a list
-        if isinstance(prompts, dict):
-            prompts = [prompts]
-
-        outputs = self.llm.chat(messages=prompts,
-                                sampling_params=self.sampling_params,
-                                use_tqdm=self.use_tqdm)
-        responses: list[str] = [output.outputs[0].text
-                                for output in outputs]
-
-        return responses
 
     def generate_with_logprobs(self, prompts:  dict[str, str] | list[dict[str, str]]) -> dict[list[str],
                                                                                               list[list[str]],
@@ -214,22 +246,53 @@ class VLLMGenerator(BaseLLMGenerator):
         outputs = self.llm.encode(prompts=prompts,
                                 #   sampling_params=self.sampling_params,
                                   use_tqdm=self.use_tqdm)
-        breakpoint()
+
         embeddings: list[float | torch.Tensor, np.ndarray] = [output.outputs[0].embedding
                                                               for output in outputs]
-        breakpoint()
+
         return embeddings
+    
+    
+if __name__=="__main__": 
+    
+    registry = BaseLLMGenerator.get_registery()
+    generator_cls, config_cls = registry['vllm']
+    generator: VLLMGenerator = generator_cls(**config_cls().model_dump())
 
-
-if __name__ == "__main__":
-
-    from agents.gsm8k.utils import read_jsonl_dataset, batch_sample_gsm
-    # from agents.prompts.gsm_llama_prompts ...
-
-    data_path = '/lus/eagle/projects/FoundEpidem/bhsu/2024_research/agents/agents/data/gsm.jsonl'
-    batch_size = 16
-
-    dataset = read_jsonl_dataset(data_path)
-    samples = batch_sample_gsm(dataset, batch_size)
-
-    breakpoint()
+    message = [
+        {'role': 'system', 'content': 'You are an AI that will yell at me no matter what I do'},
+        {'role': 'user', 'content': 'hello how are you doing today?'}, 
+        {'role': 'assistant', 'content': 'I am doing well!'}, 
+        {'role': 'assistant', 'content': 'what is the capital of France?'}
+    ]
+    message_2 = {'role': 'assistant', 'content': 'hello'}
+    out = generator.generate(message)
+    out_2 = generator.generate(message_2)
+    
+    batch_messages = [
+    [
+        {'role': 'system', 'content': 'You are an AI that will yell at me no matter what I do'},
+        {'role': 'user', 'content': 'hello how are you doing today?'},
+        {'role': 'assistant', 'content': 'I am doing well!'},
+        {'role': 'assistant', 'content': 'What is the capital of France?'}
+    ],
+    [
+        {'role': 'system', 'content': 'You are an AI that will yell at me no matter what I do'},
+        {'role': 'user', 'content': 'Can you help me with a math problem?'},
+        {'role': 'assistant', 'content': 'I CAN HELP YOU, BUT WHY CAN’T YOU SOLVE IT YOURSELF?!'},
+        {'role': 'assistant', 'content': 'What is 2 + 2?'}
+    ],
+    [
+        {'role': 'system', 'content': 'You are an AI that will yell at me no matter what I do'},
+        {'role': 'user', 'content': 'Tell me a joke.'},
+        {'role': 'assistant', 'content': 'WHY DO CHICKENS CROSS THE ROAD? TO GET AWAY FROM YOU!'},
+        {'role': 'assistant', 'content': 'HAHAHA!'}
+    ],
+    [
+        {'role': 'system', 'content': 'You are an AI that will yell at me no matter what I do'},
+        {'role': 'user', 'content': 'What is the weather like today?'},
+        {'role': 'assistant', 'content': 'IT’S SUNNY, BUT WHY DO YOU EVEN CARE?!'},
+        {'role': 'assistant', 'content': 'GO OUTSIDE AND SEE FOR YOURSELF!'}
+    ]
+]
+    batch_outputs = generator.batch_generate(batch_messages)
