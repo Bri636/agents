@@ -50,7 +50,8 @@ class PubMedEvaluationConfig(BaseConfig):
     aspects of the evaluation, such as the dataset path, randomization, 
     verbosity, and batch processing.
     """
-
+    verbose: bool = Field(default=False)
+    """ Whether to print out outputs or not """
     disable_tqdm: bool = Field(default=True)
     "A flag to disable the TQDM progress bar during evaluation. Defaults to `True`."
     num_samples: int = Field(default=1000)
@@ -74,6 +75,7 @@ def batch_gsm_evaluate(
     strategy: str,
     dataset: Dataset,
     reasoner: BaseReasoner,
+    verbose: bool = False,
     disable_tqdm: bool = True,
     num_samples: int = 100,
     batch_size: int = 32,
@@ -87,7 +89,7 @@ def batch_gsm_evaluate(
     num_batches = int(num_samples / batch_size)
     batched_samples, batch_indices = batch_data_with_indices(samples, sample_indices, batch_size)
     console = Console()
-    print_evaluation_start(console, strategy)
+    print_evaluation_start(console, strategy) if verbose else None
     # start callbacks 
     if callbacks: 
         [callback.on_start() for callback in callbacks]
@@ -110,7 +112,8 @@ def batch_gsm_evaluate(
                 num_correct += sum(corrects)
                 num_batches_completed += 1  # Fixed increment
             reasoner.reset_pass()  # reset prompts
-            print_batch_progress(console, batch_idx, num_batches, panels, messages, num_correct, batch_size)
+            breakpoint()
+            print_batch_progress(console, batch_idx, num_batches, panels, messages, num_correct, batch_size) if verbose else None
             # logging statistics
             # NOTE - is num_batches the same as num_steps?
             if callbacks:
@@ -121,12 +124,12 @@ def batch_gsm_evaluate(
                 batch_metrics: list[dict] = [asdict(callback.return_metrics()) for callback in callbacks]
             
             print(f"""
-{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n""")
+{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)}\\
+Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n""") if verbose else None
             # print(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
             progress_bar.update(1)
 
-    percent_completed = (
-        int(num_batches_completed * batch_size) / num_samples) * 100
+    percent_completed = (int(num_batches_completed * batch_size) / num_samples) * 100
     percent_correct = (num_correct / int(num_batches_completed * batch_size)) * \
         100 if num_batches_completed > 0 else 0.0
 
@@ -167,8 +170,7 @@ if __name__ == "__main__":
     reasoner_registry = BaseReasoner.get_registery()
     reasoner_cls = reasoner_registry[args.strategy]
     
-    question_prompt, answer_prompt = PubMedPromptTemplate('question', 2, 'question'),\
-                                        PubMedPromptTemplate('answer', 2, 'answer')
+    question_prompt, answer_prompt = PubMedPromptTemplate('question', 2), PubMedPromptTemplate('answer', 2)
     reasoner = reasoner_cls(generator, question_prompt, answer_prompt, filter_output_type)
 
     output = batch_gsm_evaluate(strategy=args.strategy,

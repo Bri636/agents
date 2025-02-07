@@ -6,8 +6,7 @@ from typing import Callable, Any, Tuple, Self
 from rich.panel import Panel
 import copy
 
-from agents.generators import BaseLLMGenerator
-from agents.generators.new_vllm_generator import VLLMGenerator
+from agents.generators import Generator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.pubmedqa import filter_output_type, question_is_correct
@@ -21,7 +20,7 @@ from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 from agents.pubmedqa.utils import PubMedProblem
 
 class WorldModel:
-    def __init__(self, generator: BaseLLMGenerator) -> None:
+    def __init__(self, generator: Generator) -> None:
         self.generator = generator
 
     def step(self, answer_prompt: BasePromptTemplate) -> str:
@@ -38,10 +37,8 @@ class WorldModel:
         
     def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
         """ Batch generates the next state with log probabilities """
-
         answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
         sub_answers = self.generator.generate_with_logprobs(answer_inputs)
-        
         texts = [sub_answer for sub_answer in sub_answers['text']]
         log_probs = [log_prob for log_prob in sub_answers['log_probs']]
 
@@ -53,14 +50,12 @@ class WorldModel:
 
 
 class Actor:
-    def __init__(self, generator: BaseLLMGenerator) -> None:
-
+    def __init__(self, generator: Generator) -> None:
         self.generator = generator
 
     def act(self, question_prompt: BasePromptTemplate) -> str:
         """ Returns the next sub_question to ask"""
         sub_question = self.generator.generate(question_prompt.preprocess())[0]
-
         return sub_question
     
     def batch_act(self, question_prompts: list[BasePromptTemplate]) -> list[str]:
@@ -72,19 +67,15 @@ class Actor:
 
     def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
-        sub_question = self.generator.generate_with_logprobs(
-            question_prompt.preprocess())
-        return {'text': sub_question['text'][0],
-                'token_seq': sub_question['token_seq'],
-                'log_probs': sub_question['log_probs'],
-                }
+        sub_question = self.generator.generate_with_logprobs(question_prompt.preprocess())
+        return {'text': sub_question['text'][0], 'log_probs': sub_question['log_probs']}
 
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
 class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
     def __init__(self,
-                 generator: BaseLLMGenerator,
+                 generator: Generator,
                  question_prompt: BasePromptTemplate,
                  answer_prompt: BasePromptTemplate,
                  llm_output_filter: filter_output_type,

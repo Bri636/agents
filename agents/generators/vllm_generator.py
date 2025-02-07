@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Union
 from enum import Enum
 from vllm.sequence import Logprob
 import torch
@@ -10,6 +10,14 @@ import numpy as np
 
 from agents.utils import BaseConfig
 from agents.generators.base_generator import BaseLLMGenerator
+
+ChatMessage = Union[dict[str, str], list[dict[str, str]]]
+""" 
+A single OpenAI-like chat message {'role': ..., 'content': ...}. 
+If it is a list of {'role': ..., 'content': ...}, then it contains the chat histories.
+"""
+LogProbs = Union[np.ndarray, list[float]]
+""" N x 1 array of lob probs corresponding to ONE output sequence """
 
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
@@ -84,7 +92,7 @@ class VLLMGenerator(BaseLLMGenerator):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=config.trust_remote_code)
         self.max_tokens = self.tokenizer.model_max_length
 
-    def prompt_exceeds_limit(self, prompts: dict[str, str] | list[dict[str, str]]) -> bool:
+    def prompt_exceeds_limit(self, prompts: ChatMessage) -> bool:
         """
         Counts the number of tokens in a prompt. If exceeds return True, else False.
         """
@@ -101,7 +109,7 @@ class VLLMGenerator(BaseLLMGenerator):
         max_context_length = self.tokenizer.model_max_length
         return bool(num_tokens > max_context_length)
 
-    def generate(self, prompts:  dict[str, str] | list[dict[str, str]]) -> list[str]:
+    def generate(self, prompts: ChatMessage) -> list[str]:
         """Generate response text from prompts.
 
         Parameters
@@ -125,16 +133,16 @@ class VLLMGenerator(BaseLLMGenerator):
                                 for output in outputs]
         return responses
     
-    def _extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> list[float]:
+    def _extract_log_probs(self, log_probs: list[dict[str, Logprob]]) -> LogProbs:
         """ processes through the log_probs objects to return a sequence of the log probs """
         log_prob_seq = []
         for log_prob_dict in log_probs:
             log_prob_obj: Logprob = next(iter(log_prob_dict.values()))  # extract logprobs object
             log_prob = log_prob_obj.logprob
-            log_prob_seq.append(log_prob)
+            log_prob_seq.append(np.array(log_prob))
         return log_prob_seq
 
-    def generate_with_logprobs(self, prompts: dict[str, str] | list[dict[str, str]]) -> dict[list[str], list[list[float]]]:
+    def generate_with_logprobs(self, prompts: ChatMessage) -> dict[list[str], list[LogProbs]]:
         """Generate response text from prompts.
 
         Parameters
@@ -158,6 +166,6 @@ class VLLMGenerator(BaseLLMGenerator):
                                 for output in outputs]
         log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs 
                                                for output in outputs]
-        log_prob_seqs: list[list[float]] = [self._extract_log_probs(log_prob)['log_probs'] 
+        log_prob_seqs: list[list[float]] = [self._extract_log_probs(log_prob)
                                            for log_prob in log_probs]
         return {'text': responses, 'log_probs': log_prob_seqs}

@@ -16,6 +16,9 @@ from agents.pubmedqa.utils import PubMedProblem, PubMedContext
 
 T = TypeVar('T')
 
+FSL_PROMPTS = {'question': QUESTION, 
+                'answer': ANSWER}
+
 class PubMedPromptDict(TypedDict):
     """ Stores the Components for the Prompt """
     instruction: str
@@ -76,70 +79,46 @@ def make_fsl_llama(prompt: PubMedPromptDict, num_fsl_examples: int, agent_type: 
 
     # Sample the specified number of formatted examples
     indices = random.sample(range(len(formatted_examples)), num_fsl_examples)
-    selected_examples: list[list[dict]] = [
-        formatted_examples[i] for i in indices]
-
+    selected_examples: list[list[dict]] = [formatted_examples[i] for i in indices]
     return list(itertools.chain(*selected_examples))
 
 class PubMedPromptTemplate(BasePromptTemplate):
     """Question-Answer Prompt Template for Llama."""
-
-    FSL_PROMPTS = {
-        # 'base': BASE,
-        'question': QUESTION,
-        'answer': ANSWER
-    }
-
     def __init__(
         self,
         fsl_prompt_type: str = 'question',
-        num_fsl_examples: int = 1,
-        agent_type: Optional[str] = None
+        num_fsl_examples: int = 1
     ) -> None:
         """Initialize the GSMLlamaPromptTemplate."""
-
         # Validate and set the prompt type
-        if fsl_prompt_type not in self.FSL_PROMPTS:
-            valid_prompts = ', '.join(self.FSL_PROMPTS.keys())
+        if fsl_prompt_type not in FSL_PROMPTS:
+            valid_prompts = ', '.join(FSL_PROMPTS.keys())
             raise ValueError(f"Invalid prompt type. Choose from: {valid_prompts}")
-        self._fsl_prompt_type = fsl_prompt_type
-
         # Generate the base prompt using the provided parameters
-        fsl_prompt_base_raw = self.FSL_PROMPTS[fsl_prompt_type]
-        fsl_prompt_base: List[dict[str, str]] = make_fsl_llama(fsl_prompt_base_raw, num_fsl_examples, agent_type)
+        fsl_prompt_base_raw = FSL_PROMPTS[fsl_prompt_type]
+        fsl_prompt_base: List[dict[str, str]] = make_fsl_llama(fsl_prompt_base_raw, num_fsl_examples, fsl_prompt_type)
 
+        # Store initialization parameters
+        self.prompt_type = fsl_prompt_type
+        self.prompt_kwargs = {
+            'fsl_prompt_type': fsl_prompt_type,
+            'num_fsl_examples': num_fsl_examples,
+        }
+            
         # Initialize prompts and history
         self._base_prompt: List[PromptMessage] = [PromptMessage(**item) for item in fsl_prompt_base]
         self._prompt: List[PromptMessage] = copy.deepcopy(self._base_prompt)
         self._history: List[PromptMessage] = []
-
-        # Store initialization parameters
-        self._prompt_kwargs = {
-            'fsl_prompt_type': fsl_prompt_type,
-            'num_fsl_examples': num_fsl_examples,
-            'agent_type': agent_type
-        }
         
         # CHANGE: Store the original last message's content only once here.
         if self._prompt:
             self._original_last_message = self._prompt[-1].content
-        
         
     @classmethod
     def make_from_prompt(cls: T, prompt: PubMedPromptTemplate) -> T: 
         """ Creates a prompt from the kwargs of another prompt """
         prompt = cls(**prompt.prompt_kwargs)
         return prompt
-
-    @property
-    def prompt_kwargs(self) -> dict[str, Any]:
-        """Returns the keyword arguments used to initialize the prompt."""
-        return self._prompt_kwargs.copy()
-
-    @property
-    def prompt_type(self) -> str:
-        """Returns the type of the prompt."""
-        return self._fsl_prompt_type
 
     @property
     def history(self) -> List[PromptMessage]:
@@ -186,7 +165,6 @@ class PubMedPromptTemplate(BasePromptTemplate):
         """
         if not isinstance(prompt, PubMedPromptTemplate):
             raise TypeError("The provided prompt must be an instance of PubMedPromptTemplate.")
-
         # Determine if role swapping is needed
         if self._fsl_prompt_type != prompt._fsl_prompt_type:
             swapped_history = [
@@ -198,7 +176,6 @@ class PubMedPromptTemplate(BasePromptTemplate):
             ]
         else:
             swapped_history = copy.deepcopy(prompt.history)
-
         # Update the current prompt and history
         self._history.extend(swapped_history)
         self._prompt.extend(swapped_history)

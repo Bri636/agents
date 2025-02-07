@@ -203,15 +203,13 @@ class BatchMCTS:
         # NOTE - len(question_prompts) = len(leaf_nodes) * num_children
         # Generate sub_questions in batch
         sub_questions: list[str] = actor.batch_act(question_prompts)
-        breakpoint()
         # fill in the answer_prompts
         # Update answer_prompts with sub_questions
         for idx in range(len(sub_questions)):
             answer_prompts[idx].add(role='user', content=sub_questions[idx])
-
         # Generate sub_answers with log_probs in batch
         sub_answers = world_model.batch_step_logprobs(answer_prompts)
-
+        breakpoint()
         # Process each sub_answer and create child nodes
         for idx in range(len(sub_answers)):
             # update each question prompt
