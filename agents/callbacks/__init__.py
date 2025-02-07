@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Union, Callable
 from agents.callbacks.base_callback import BaseCallback
 from agents.callbacks.callbacks import (GSMBatchMetrics, GSMThroughputMetrics, GSMThroughputCallback, 
-                                        MCTSBatchMetrics, MCTSMetrics, MCTSCallBack)
+                                        MCTSBatchMetrics, MCTSMetrics, MCTSCallBack, ThroughputCallback)
 
 Callback = Union[BaseCallback, GSMThroughputCallback, MCTSCallBack]
 

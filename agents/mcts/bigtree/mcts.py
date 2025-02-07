@@ -9,13 +9,15 @@ import math
 import logging
 import numpy as np
 
-from agents.mcts.bigtree.node import State, Action, Reward, Computable, NodePath
+from agents.mcts.bigtree.node import State, Action, Reward, Computable, NodePath, MCTSNode
+
 
 def win_lose(win: bool,
              win_reward: float = 100,
              lose_reward: float = -50
              ) -> float:
     return win_reward if win else lose_reward
+
 
 class MCTS(Generic[State, Action]):
     """
@@ -38,6 +40,7 @@ class MCTS(Generic[State, Action]):
 
     Note - Since no fast_reward instead of reward for unvisited children in UCT we HAVE to visit the *unvisited* children with maximum fast_reward first
     """
+
     def __init__(self,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
@@ -86,19 +89,34 @@ class MCTS(Generic[State, Action]):
             reward_strategy)
 
         self.logger = logger
-        
-    def select(self, nodes: NodePath | list[NodePath]) -> list[list[NodePath]]: 
+
+    def select(self, nodes: list[MCTSNode]) -> list[NodePath]:
         """ Selects optimal leaf node for batch of nodes or single node """
-        if isinstance(nodes, NodePath): 
-            nodes = [nodes]
-            
         node_paths: list[NodePath] = []
-        for node in nodes: 
+        for node in nodes:
             node_path: NodePath = []
-            while not node.is_terminal: 
+            while not (node.terminal_with_depth_limit(self.depth_limit)
+                       and len(node.children) != 0):
                 child = node.best_child
                 node_path.append(child)
                 node = child
             node_paths.append(node_path)
-        
         return nodes
+
+    def expand(self, 
+               nodes: list[MCTSNode], 
+               actor, 
+               world_model, 
+               ):
+        """ Batch Expands a list of leaf nodes """
+        for node in nodes:
+            ...
+        ...
+        
+        
+if __name__=="__main__": 
+    
+    
+    
+    
+    breakpoint()

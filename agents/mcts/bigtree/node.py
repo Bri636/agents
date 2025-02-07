@@ -93,6 +93,19 @@ class MCTSNode(Node):
         """ Returns the best child for node based on max uct """
         return max(self.children, self.uct)
     
+    @property
+    def depth(self) -> int: 
+        """ Computes the depth of the node in the tree """
+        depth, node = 0, self
+        while self.parent: 
+            depth +=1 
+            node = node.parent
+        return depth
+    
+    def terminal_with_depth_limit(self, depth_limit: int) -> bool:
+        """ True if node is terminal or depth limit exceeded """
+        return bool(self.is_terminal or self.depth >= depth_limit)
+    
 
 NodePath = list[MCTSNode]
 """ List of Nodes """

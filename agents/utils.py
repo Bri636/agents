@@ -86,6 +86,9 @@ class BaseConfig(BaseModel):
             raw_data = yaml.safe_load(fp)
         return cls(**raw_data)
     
+ConfigLike = Union[BaseModel, BaseConfig]
+""" Pydantic class BaseModel or custom BaseConfig type"""
+    
 def register_strategy(strategy_dict, name=None):
     """Decorator to register a method as a search strategy."""
     def decorator(func):
@@ -208,3 +211,20 @@ def get_logging_path(env_name: str = 'agents', file_name: str = 'some_log_file.l
     """ Returns to gsm.jsonl filepath based on package name """
     return str(pkg_resources.resource_filename(env_name, '') + f'/log_files/{file_name}')
 
+
+def calculate_average_seconds_per_sample(data):
+    """
+    Calculates the average seconds per sample from the given data.
+
+    Parameters:
+        data (dict): Dictionary containing 'batch_metrics' with batch details.
+
+    Returns:
+        float: Average seconds per sample across all batches.
+    """
+    # Extract the 'seconds_per_sample' values from each batch
+    seconds_per_sample = [batch['seconds_per_sample'] for batch in data['batch_metrics']]
+    
+    # Calculate the average
+    average_seconds = sum(seconds_per_sample) / len(seconds_per_sample)
+    return average_seconds

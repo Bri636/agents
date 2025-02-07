@@ -15,7 +15,6 @@ import copy
 
 from agents.utils import BaseConfig
 from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents import prompt_registry
 
 PROMPT_NAME = 'vllm'
 Example = TypeVar('Example')
