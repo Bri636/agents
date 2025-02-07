@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Literal
 from enum import Enum
 from vllm.sequence import Logprob
-from agents.utils import BaseConfig
-from agents.generators.base_generator import BaseLLMGenerator
 import torch
 import numpy as np
 
+from agents.utils import BaseConfig
+from agents.generators.base_generator import BaseLLMGenerator
 
 class ModelType(Enum):
     '''Suppored Models With VLLM'''
@@ -24,7 +24,7 @@ class VLLMGeneratorConfig(BaseConfig):
     _name: Literal['vllm'] = 'vllm'  # type: ignore[assignment]
     # The name of the vllm LLM model, see
     # https://docs.vllm.ai/en/latest/models/supported_models.html
-    llm_name: str = ModelType.LLAMA38B.value
+    # llm_name: str = ModelType.LLAMA38B.value
     # Whether to trust remote code
     trust_remote_code: bool = True
     # Temperature for sampling
@@ -49,7 +49,7 @@ class VLLMGeneratorConfig(BaseConfig):
 class VLLMGenerator(BaseLLMGenerator):
     """Language model generator using vllm backend."""
 
-    def __init__(self, config: VLLMGeneratorConfig) -> None:
+    def __init__(self, model_name_or_path: str, config: VLLMGeneratorConfig) -> None:
         """Initialize the VLLMGenerator.
 
         Parameters
@@ -78,7 +78,7 @@ class VLLMGenerator(BaseLLMGenerator):
         )
         # Create an LLM instance
         self.llm = LLM(
-            model=config.llm_name,
+            model=model_name_or_path,
             trust_remote_code=config.trust_remote_code, # NOTE: Fix to True 
             dtype=config.dtype,
             tensor_parallel_size=config.tensor_parallel_size,
@@ -86,7 +86,7 @@ class VLLMGenerator(BaseLLMGenerator):
 
         # inference  attr
         self.use_tqdm = config.use_tqdm
-        self.tokenizer = AutoTokenizer.from_pretrained(config.llm_name, 
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, 
                                                        trust_remote_code=config.trust_remote_code)
         self.max_tokens = self.tokenizer.model_max_length
 

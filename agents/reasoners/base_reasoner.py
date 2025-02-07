@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Callable, Self
+from typing import Callable, Self, Tuple
+
 from agents.reasoners.types import T
 from agents.generators.base_generator import BaseLLMGenerator
+from agents.utils import ConfigLike
 
 class BaseReasoner: 
     
-    registry = {}
+    _registry = {}
     
     def __init__(self) -> None:
         pass
@@ -27,7 +29,7 @@ class BaseReasoner:
     def register(cls: Self, name: str = None) -> Callable: 
         """ Registers a reasoner class in the base reasoners registry """
         def decorator(subclass: T) -> T: 
-            cls.registry[name or subclass.__name__] = subclass
+            cls._registry[name or subclass.__name__] = subclass
             return subclass
         return decorator
     
@@ -39,3 +41,15 @@ class BaseReasoner:
     def batch_generate_answer(self): 
         """ Batch generated answers """
         pass
+    
+    def __init_subclass__(cls, *, name: str):
+        super().__init_subclass__()
+        # add new class if not in registry 
+        # assert config, f''' LLM Generator subclasses must have a config associated with it '''
+        # if not in registry, add to it 
+        if not cls._registry.get(name):
+            cls._registry[name] = (cls)
+            
+    @classmethod
+    def get_registery(cls) -> dict[str, Self]: 
+        return cls._registry

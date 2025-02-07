@@ -204,6 +204,7 @@ class BatchMCTS:
         # NOTE - len(question_prompts) = len(leaf_nodes) * num_children
         # Generate sub_questions in batch
         sub_questions: list[str] = actor.batch_act(question_prompts)
+        breakpoint()
         # fill in the answer_prompts
         # Update answer_prompts with sub_questions
         for idx in range(len(sub_questions)):
@@ -443,6 +444,7 @@ class BatchMCTS:
             # get all leaf nodes to expand
             leaves_to_expand: list[BTMCTSNode] = [path[-1]
                                                   for path in sim_paths]
+            breakpoint()
             self.batch_expand(leaves_to_expand, actor, world_model,
                               num_children, sim_samples, sim_indices)
 

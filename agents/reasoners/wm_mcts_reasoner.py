@@ -9,7 +9,7 @@ import copy
 from agents.generators import BaseLLMGenerator
 from agents.generators.new_vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
-from agents.prompts import BasePromptTemplate
+from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
 
@@ -17,8 +17,8 @@ from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-from agents.gsm8k.types import GSM8KProblem
-
+# from agents.gsm8k.types import GSM8KProblem
+from agents.pubmedqa.pubmedqa_utils import PubMedProblem
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -91,10 +91,7 @@ class Actor:
     def prompt_exceeds_limit(self, prompts: BasePromptTemplate):
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
-
-@BaseReasoner.register(name='mcts_world_model')
-class MCTSWorldReasoner(BaseReasoner):
-
+class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
     def __init__(self,
                  generator: BaseLLMGenerator,
                  answer_prompt: BasePromptTemplate,
@@ -119,6 +116,8 @@ class MCTSWorldReasoner(BaseReasoner):
         Attempts to generate an answer for a sample question; it will return - 
         Tuple[if successfully generated, and if answer was correct]
         """
+        from agents.mcts.bigtree.batch_bigtree_llm_mcts import MCTS
+        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
         question = sample['question']
         mcts = MCTS(question_prompt_base=self.question_prompt, answer_prompt_base=self.answer_prompt)
 
@@ -178,12 +177,12 @@ class MCTSWorldReasoner(BaseReasoner):
         roots: list[BTMCTSNode] = []
         for idx in range(batch_size): 
             # prime the prompts with the problem
-            problem: GSM8KProblem = samples[idx]['question']
+            problem: PubMedProblem = samples[idx]['question']
             question_prompt: BasePromptTemplate = copy.deepcopy(self.question_prompt)
             answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
             question_prompt.add('user', content=problem)
             answer_prompt.add('user', content=problem)
-            
+
             root = BTMCTSNode(
                 state=question_prompt,
                 action=None,
@@ -196,7 +195,6 @@ class MCTSWorldReasoner(BaseReasoner):
         # note - we deepcopy to prevent over-writing question_prompt
         mcts = BatchMCTS(question_prompt_base=copy.deepcopy(question_prompt), 
                          answer_prompt_base=copy.deepcopy(answer_prompt))
-
         try: 
             answers, optimal_paths, panels = mcts.batch_guess_answer(roots, 
                                                                 self.actor, 
