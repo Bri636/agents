@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Literal, TypeVar, Union, List, Tuple, Optional, Any
 from dataclasses import dataclass, field, asdict
-
+import traceback
 import yaml, time, logging, sys  # type: ignore[import-untyped]
 from pydantic import BaseModel
 from torch import Tensor
@@ -228,3 +228,12 @@ def calculate_average_seconds_per_sample(data):
     # Calculate the average
     average_seconds = sum(seconds_per_sample) / len(seconds_per_sample)
     return average_seconds
+
+
+def get_error_details(exception: Exception) -> str:
+    """ Returns a formatted error message with file, line number, and function details. """
+    tb = traceback.extract_tb(exception.__traceback__)
+    last_call = tb[-1]  # Get the last traceback entry
+    file_name, line_number, function_name, text = last_call
+    return f"Error in {file_name}, line {line_number}, in {function_name}: {exception}"
+

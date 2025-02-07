@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.prompts.pubmed_prompts import QUESTION, ANSWER
-from agents.pubmedqa.pubmedqa_utils import PubMedProblem, PubMedContext
+from agents.pubmedqa.utils import PubMedProblem, PubMedContext
 
 T = TypeVar('T')
 
@@ -209,10 +209,3 @@ class PubMedPromptTemplate(BasePromptTemplate):
         # Instead, we directly set the last message based on the already stored original content.
         # self._history[-1].content = f"{self._original_last_message}\n{strategy}"
         self._prompt[0].content = f'{self._prompt[0].content}\n{strategy}'
-        
-        
-if __name__=="__main__": 
-    
-    prompt = PubMedPromptTemplate('question', 3, 'question')
-    
-    breakpoint()

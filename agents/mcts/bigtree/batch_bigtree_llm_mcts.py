@@ -23,7 +23,6 @@ from agents.mcts.bigtree.mcts_utils import SearchStrategies
 from agents.mcts.bigtree import Prompt, Computable, NodePath
 from agents.gsm8k import GSM8KProblem
 from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 
 def win_lose(win: bool,
              win_reward: float = 100,
@@ -444,10 +443,9 @@ class BatchMCTS:
             # get all leaf nodes to expand
             leaves_to_expand: list[BTMCTSNode] = [path[-1]
                                                   for path in sim_paths]
-            breakpoint()
             self.batch_expand(leaves_to_expand, actor, world_model,
                               num_children, sim_samples, sim_indices)
-
+            breakpoint()
             successes = self.batch_simulate_node(sim_paths, actor, world_model,
                                                  max_tries, sim_samples, sim_indices)
             bp_paths: list[NodePath] = [path for success, path

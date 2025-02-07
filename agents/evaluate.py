@@ -1,26 +1,22 @@
 """ Evaluator class for evaluating how well the llm agents perform """
 from __future__ import annotations
 from typing import Callable, Tuple, Any, Optional, Literal, Union
-import random
+import random, os
 from tqdm import tqdm
 from tqdm.rich import tqdm
 from dataclasses import dataclass, asdict
-import logging
-import pprint as pp
 from rich.console import Console
 from datasets import Dataset
 from argparse import ArgumentParser
 from pydantic import Field
 from datasets import load_dataset
 
-from agents.pubmedqa.utils import filter_output_type, print_batch_progress, print_evaluation_start
-from agents.utils import batch_data_with_indices
+from agents.pubmedqa import filter_output_type, print_batch_progress, print_evaluation_start
+from agents.utils import BaseConfig, batch_data_with_indices
 from agents.callbacks import Callback, CallbackMetrics, ThroughputCallback, GSMThroughputMetrics
-from agents.reasoners.base_reasoner import BaseReasoner
-from agents.reasoners.wm_mcts_reasoner import MCTSWorldReasoner
-from agents.generators.vllm_generator import VLLMGenerator, VLLMGeneratorConfig
-from agents.utils import BaseConfig
-
+from agents.reasoners import BaseReasoner, MCTSWorldReasoner
+from agents.generators import VLLMGenerator, VLLMGeneratorConfig
+from agents.prompts import PubMedPromptTemplate
 
 @dataclass
 class Metrics:
@@ -57,20 +53,16 @@ class PubMedEvaluationConfig(BaseConfig):
 
     disable_tqdm: bool = Field(default=True)
     "A flag to disable the TQDM progress bar during evaluation. Defaults to `True`."
-
     num_samples: int = Field(default=1000)
     """The total number of samples to evaluate. Defaults to 1000."""
-
     num_tries: int = Field(default=10)
     """The number of attempts to make for each sample during evaluation. Defaults to 10."""
-
     batch_size: int = Field(default=4)
     """The number of samples to process in a single batch during evaluation. Defaults to 4."""
-
     generator_config: "VLLMGeneratorConfig" = Field(
         default_factory=VLLMGeneratorConfig)
     """Configuration for the VLLM generator."""
-
+    
     def __init__(self, **kwargs):
         """Initialize the evaluation config with proper validation."""
         super().__init__(**kwargs)
@@ -86,34 +78,34 @@ def batch_gsm_evaluate(
     num_samples: int = 100,
     batch_size: int = 32,
     num_tries: int = 10,
-    callbacks: Optional[list[Callback]] = None,
-    logger: Optional[logging.Logger] = None
+    callbacks: Optional[list[Callback]] = None
 ) -> Tuple[Metrics, list[CallbackMetrics]]:
     """ Performs batched evaluation on N samples from GSM8K within M tries, and calculates the metrics for them """
     # generating batches
     sample_indices = random.sample(range(len(dataset)), num_samples)
     samples = [dataset[i] for i in sample_indices]
     num_batches = int(num_samples / batch_size)
-    batched_samples, batch_indices = batch_data_with_indices(
-        samples, sample_indices, batch_size)
-    # printing and starting all callbacks
+    batched_samples, batch_indices = batch_data_with_indices(samples, sample_indices, batch_size)
     console = Console()
     print_evaluation_start(console, strategy)
-    # [callback.on_start() for callback in callbacks]
-
+    # start callbacks 
+    if callbacks: 
+        [callback.on_start() for callback in callbacks]
+        
     # set counters for number of correct questions and number of batches completed
     num_correct = 0
     num_batches_completed = 0
     with tqdm(total=num_samples,
               disable=disable_tqdm,
-              desc=f"GSM Evaluation - {num_samples} Samples",
+              desc=f"PubMed Evaluation - {num_samples} Samples",
               leave=False) as progress_bar:
 
         for batch_idx, (batch, indices) in enumerate(zip(batched_samples, batch_indices)):
             # callbacks on batch start
-            # [callback.on_batch_start() for callback in callbacks]
-            finished, corrects, messages, panels = reasoner.batch_generate_answer(
-                indices, batch, num_tries)
+            if callbacks: 
+                [callback.on_batch_start() for callback in callbacks]
+                
+            finished, corrects, messages, panels = reasoner.batch_generate_answer(indices, batch, num_tries)
             if finished:
                 num_correct += sum(corrects)
                 num_batches_completed += 1  # Fixed increment
@@ -121,18 +113,16 @@ def batch_gsm_evaluate(
             print_batch_progress(console, batch_idx, num_batches, panels, messages, num_correct, batch_size)
             # logging statistics
             # NOTE - is num_batches the same as num_steps?
-            # [callback.on_batch_end(batch_idx=batch_idx, batch_size=batch_size, num_steps=num_batches)
-            #  for callback in callbacks]
-
-            # batch_metrics: list[dict] = [asdict(callback.return_metrics()) for callback in callbacks]
-
-            if logger:
-                pass
-                # logger.info(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
-                # logger.info(f"Device {os.environ.get('CUDA_VISIBLE_DEVICES')}: {num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
-            else:
-                print(f"{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n")
-                # print(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
+            if callbacks:
+                [callback.on_batch_end(batch_idx=batch_idx, 
+                                       batch_size=batch_size, 
+                                       num_steps=num_batches)
+                 for callback in callbacks]
+                batch_metrics: list[dict] = [asdict(callback.return_metrics()) for callback in callbacks]
+            
+            print(f"""
+{num_correct} Questions Correct Out of {int((batch_idx + 1) * batch_size)} Total Questions Asked... Score: {((num_correct / int((batch_idx + 1) * batch_size)) * 100):.2f} %\n""")
+            # print(f'Device {os.environ.get("CUDA_VISIBLE_DEVICES")}: Batch Metrics for Batch {batch_idx + 1}: {pp.pformat(batch_metrics)}\n')
             progress_bar.update(1)
 
     percent_completed = (
@@ -149,9 +139,7 @@ def batch_gsm_evaluate(
                        'num_correct': num_correct,
                        'num_completed': num_batches_completed,
                        'num_total': num_samples
-                       }),
-            callback_metrics
-            )
+                       }), callback_metrics)
 
 def parse_args() -> Any:
     arg_parser = ArgumentParser()
@@ -167,7 +155,6 @@ def parse_args() -> Any:
                             default='./logs/mcts_world_model.log')
     return arg_parser.parse_args()
 
-
 if __name__ == "__main__":
 
     args = parse_args()
@@ -176,9 +163,13 @@ if __name__ == "__main__":
                            trust_remote_code=True)['train']
     generator = VLLMGenerator(args.model_name_or_path,
                               eval_config.generator_config)
+    
     reasoner_registry = BaseReasoner.get_registery()
     reasoner_cls = reasoner_registry[args.strategy]
-    reasoner = reasoner_cls.initialize(generator, filter_output_type)
+    
+    question_prompt, answer_prompt = PubMedPromptTemplate('question', 2, 'question'),\
+                                        PubMedPromptTemplate('answer', 2, 'answer')
+    reasoner = reasoner_cls(generator, question_prompt, answer_prompt, filter_output_type)
 
     output = batch_gsm_evaluate(strategy=args.strategy,
                                 dataset=dataset,
@@ -187,6 +178,5 @@ if __name__ == "__main__":
                                 num_samples=eval_config.num_samples,
                                 batch_size=eval_config.batch_size,
                                 num_tries=eval_config.num_tries,
-                                callbacks=None, 
-                                logger=None)
+                                callbacks=None)
     breakpoint()

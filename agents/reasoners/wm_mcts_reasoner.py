@@ -10,15 +10,15 @@ from agents.generators import BaseLLMGenerator
 from agents.generators.new_vllm_generator import VLLMGenerator
 from agents.reasoners.base_reasoner import BaseReasoner
 from agents.prompts.base_prompt_template import BasePromptTemplate
-from agents.gsm8k.utils import filter_output_type, gsm_is_correct
-
+from agents.pubmedqa import filter_output_type, question_is_correct
+from agents.utils import get_error_details
 
 # from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
 # from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
 # from agents.gsm8k.types import GSM8KProblem
-from agents.pubmedqa.pubmedqa_utils import PubMedProblem
+from agents.pubmedqa.utils import PubMedProblem
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -31,20 +31,14 @@ class WorldModel:
 
     def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
-        assert isinstance(self.generator, VLLMGenerator), f"""
-        LogProbs only supported with VLLM for now...
-        """
-        sub_answer = self.generator.generate_with_logprobs(
-            answer_prompt.preprocess())
+        sub_answer = self.generator.generate_with_logprobs(answer_prompt.preprocess())
         return {'text': sub_answer['text'][0],
                 'log_probs': sub_answer['log_probs'],
                 }
         
     def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
         """ Batch generates the next state with log probabilities """
-        assert isinstance(self.generator, VLLMGenerator), f"""
-        LogProbs only supported with VLLM for now...
-        """
+
         answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
         sub_answers = self.generator.generate_with_logprobs(answer_inputs)
         
@@ -78,9 +72,6 @@ class Actor:
 
     def act_logprobs(self, question_prompt: BasePromptTemplate) -> dict:
         """ Returns the next sub_question to ask"""
-        assert isinstance(self.generator, VLLMGenerator), f"""
-        LogProbs only supported with VLLM for now...
-        """
         sub_question = self.generator.generate_with_logprobs(
             question_prompt.preprocess())
         return {'text': sub_question['text'][0],
@@ -94,8 +85,8 @@ class Actor:
 class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
     def __init__(self,
                  generator: BaseLLMGenerator,
-                 answer_prompt: BasePromptTemplate,
                  question_prompt: BasePromptTemplate,
+                 answer_prompt: BasePromptTemplate,
                  llm_output_filter: filter_output_type,
                  **kwargs
                  ) -> None:
@@ -144,7 +135,7 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
                                                             num_children=num_children
                                                             )
             if self.llm_output_filter(answer) == 'final_answer':
-                correct, message = gsm_is_correct(idx, answer, sample)
+                correct, message = question_is_correct(idx, answer, sample)
             generated = True
             return generated, correct, message, panel
 
@@ -207,27 +198,12 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
             for idx, (sample_idx, sample, answer) in enumerate(zip(sample_indices, samples, answers)): 
                 filtered_answer = self.llm_output_filter(answer)
                 if filtered_answer == 'final_answer':
-                        correct, message = gsm_is_correct(sample_idx, answer, sample)
+                        correct, message = question_is_correct(sample_idx, answer, sample)
                         # update containers
                         corrects[idx] = correct
                         messages[idx] = message
             return True, corrects, messages, panels
             
         except Exception as e:
-            messages = [f'Failed to generate due to this error: {e}, dropping batch...\n'] * batch_size
-            breakpoint()
+            messages = [f'Failed to generate due to this error: {get_error_details(e)}, dropping batch...\n'] * batch_size
             return False, [False] * batch_size, messages, panels # else, False and drop batch 
-
-    @classmethod
-    def initialize(cls: Self,
-                   generator: BaseLLMGenerator,
-                   filter_output_func: Callable = filter_output_type
-                   ) -> Self:
-        from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-        question_prompt = GSMLlamaPromptTemplate('question', 1, 'question')
-        answer_prompt = GSMLlamaPromptTemplate('answer', 1, 'answer')
-
-        return cls(generator,
-                   answer_prompt=answer_prompt,
-                   question_prompt=question_prompt,
-                   llm_output_filter=filter_output_func)

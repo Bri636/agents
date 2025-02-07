@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from datasets import load_dataset, Dataset
-from typing import TypedDict, Optional, Literal
+from typing import TypedDict, Optional, Literal, Tuple
 import logging
 import re
 from rich.console import Console
@@ -65,6 +65,15 @@ def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_
         return 'answer'
     else:
         return '[invalid]'
+    
+
+def question_is_correct(idx: int, answer: str, gold_answer: dict[str, str]) -> Tuple[bool, str]:
+    """ Checks if final model's output matches the gold answer """ 
+    answer = float(pubmed_extract_answer(answer))
+    gold_answer = float(pubmed_extract_answer(gold_answer["final_decision"]))
+    
+    return (bool(answer == gold_answer), 
+            f'Question #{idx + 1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n')
 
 def truncate_dataset(dataset: list[PubMedProblem], 
                      batch_size: int, 
@@ -101,10 +110,7 @@ def split_dataset(dataset: list[PubMedProblem], num_chunks: int, batch_size: int
             for i in range(num_chunks)]    
     
     
-    
-    
 ##### visual utils ####
-
 def print_evaluation_start(console: Console, strategy: str):
     console.rule(f'Running Eval on {strategy} Reasoner', style="bold", characters='=')
     for _ in range(2):
@@ -131,10 +137,3 @@ def print_batch_progress(console: Console, batch_idx: int, num_batches: int, pan
         expand=True
     )
     console.print(panel_summ)
-
-if __name__=="__main__": 
-    
-    
-    dataset = load_dataset('qiaojin/PubMedQA', 'pqa_labeled')
-    
-    breakpoint()

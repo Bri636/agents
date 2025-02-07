@@ -33,23 +33,16 @@ class BaseReasoner:
             return subclass
         return decorator
     
-    @classmethod
-    def initialize(cls: Self, generator: BaseLLMGenerator, llm_output_filter: Callable, **kwargs) -> Self: 
-        """ Initializes a Reasoner from at least a generator and an llm_output_filter callable """
-        pass
-    
     def batch_generate_answer(self): 
         """ Batch generated answers """
         pass
     
     def __init_subclass__(cls, *, name: str):
         super().__init_subclass__()
-        # add new class if not in registry 
-        # assert config, f''' LLM Generator subclasses must have a config associated with it '''
         # if not in registry, add to it 
         if not cls._registry.get(name):
             cls._registry[name] = (cls)
             
     @classmethod
-    def get_registery(cls) -> dict[str, Self]: 
+    def get_registery(cls: Self) -> dict[str, Self]: 
         return cls._registry
