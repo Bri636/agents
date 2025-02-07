@@ -1,47 +1,22 @@
-from __future__ import annotations
-
 """ BigTree Version of MCTS Node """
-import pickle
-from os import PathLike
-import pickle
-import math
+
+from __future__ import annotations
 import copy
-from typing import Generic, Optional, NamedTuple, Callable, Hashable, Any, Literal, Tuple, NewType, Union, TypeVar
+from typing import Generic, Optional, Callable, Union, TypeVar
 import itertools
-from abc import ABC
-from collections import defaultdict
 from rich.console import Console
 from rich.table import Table
 from io import StringIO
 import numpy as np
-from tqdm import trange
-import gymnasium as gym
-import random
-from textwrap import dedent
-from rich.tree import Tree
-
-from agents.mcts.base import (SearchAlgorithm, WorldModel, SearchConfig, 
-                                                State, Action, Example, Trace)
-from agents.utils import calculate_returns
-from agents.prompts.base_prompt_template import BasePromptTemplate
-# from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
-import gymnasium as gym 
-import ale_py
-from rich.pretty import pprint as rpprint
-import pprint as pp
-
 from bigtree.node.node import Node
 
-LLMNodeState = Union[BasePromptTemplate]
-""" BasePromptTemplate or GSMLLamaPromptTemplate"""
+# types
+Computable = Union[np.ndarray, int, float]
+State = TypeVar('State')
+Action = TypeVar('Action')
+Reward = TypeVar('Reward', Computable)
 
-LLMNodeAction = str
-""" String that is an action of the LLM """
-
-LLMNodeReward = Union[float, np.ndarray, int]
-""" Reward value from an action """
-
-class BTMCTSNode(Node, Generic[State, Action, Example]):
+class MCTSNode(Node, Generic[State, Action]):
     
     id_iter = itertools.count() # iterator; each next returns next step as int
 
@@ -50,10 +25,10 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         cls.id_iter = itertools.count() 
 
     def __init__(self, 
-                 state: LLMNodeState = None, 
-                 action: LLMNodeAction = None, 
-                 reward: LLMNodeReward = None,
-                 parent: "Optional[BTMCTSNode]" = None,
+                 state: State = None, 
+                 action: Action = None, 
+                 reward: Reward = None,
+                 parent: "Optional[MCTSNode]" = None,
                  is_terminal: bool = False, 
                  calc_q: Callable[[list[float]], float] = np.mean
                  ) -> None:
@@ -80,27 +55,25 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         """
         # class-level attr
         # tracks how many instances of MCTSNode have been created as a way to show id of node 
-        self.id = next(BTMCTSNode.id_iter)
+        self.id = next(MCTSNode.id_iter)
         self._name = f'{self.id}'
         super().__init__(name=self._name, parent=parent)
         
         # object init attrs
-        self._state: LLMNodeState = state
+        self._state: State = state
         """ Stores the history state of a prompt """
-        self.action: LLMNodeAction = action
+        self.action: Action = action
         """ Store the action that led to this state as a string """
-        self.reward: LLMNodeReward = reward
+        self.reward: Reward = reward
         """ Stores the float reward from the action that led to this node state; just one value """
         self.is_terminal = is_terminal
         self.calc_q = calc_q
-        
         # internal attr tracking 
         self._cum_rewards: list[float] = [] # cumulative rewards from rollout
-        # heurestic reward 
         self._fast_heuristic = 0.0
         
     @property 
-    def state(self) -> LLMNodeState: 
+    def state(self) -> State: 
         """ Returns deepcopy of state """
         return copy.deepcopy(self._state)
             
@@ -163,3 +136,6 @@ class BTMCTSNode(Node, Generic[State, Action, Example]):
         rich_output = buffer.getvalue()
         # Return the string
         return rich_output
+    
+NodePath = list[MCTSNode]
+""" List of nodes representing a path in MCTS Tree """

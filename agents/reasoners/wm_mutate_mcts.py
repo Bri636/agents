@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 from typing import Callable, Any, Tuple, Self
-
 from rich.panel import Panel
 import copy
 
-from agents.generators import BaseLLMGenerator
-from agents.generators.new_vllm_generator import VLLMGenerator
-from agents.reasoners.base_reasoner import BaseReasoner
+from agents.generators import BaseLLMGenerator, VLLMGenerator, LogProbs, ChatMessage
+from agents.reasoners import BaseReasoner
 from agents.prompts import BasePromptTemplate
-from agents.prompts.llama_prompt import GSMLlamaPromptTemplate
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 
-
-# from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
-from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+from agents.mcts.node import MCTSNode
 from agents.gsm8k.types import GSM8KProblem
-
 
 class WorldModel:
     def __init__(self, generator: BaseLLMGenerator) -> None:
@@ -29,7 +22,7 @@ class WorldModel:
         sub_answer = self.generator.generate(answer_prompt.preprocess())[0]
         return sub_answer
 
-    def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict:
+    def step_logprobs(self, answer_prompt: BasePromptTemplate) -> dict[str, str | LogProbs]:
         """ Returns the next sub_question to ask"""
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
@@ -37,10 +30,9 @@ class WorldModel:
         sub_answer = self.generator.generate_with_logprobs(
             answer_prompt.preprocess())
         return {'text': sub_answer['text'][0],
-                'log_probs': sub_answer['log_probs'],
-                }
+                'log_probs': sub_answer['log_probs']}
         
-    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
+    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str|LogProbs]]:
         """ Batch generates the next state with log probabilities """
         assert isinstance(self.generator, VLLMGenerator), f"""
         LogProbs only supported with VLLM for now...
@@ -208,8 +200,8 @@ class MutateMCTSWorldReasoner(BaseReasoner):
                           num_children: int = 3, 
                           verbose: bool = True
                           ) -> Tuple[bool, list[bool], list[str], list[Panel | None]]:
-        from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
+        from agents.mcts.bigtree.batch_mcts import BatchMCTS
+        from agents.mcts.bigtree.node import BTMCTSNode
         from agents.prompts.strategy_prompt import GSMStrategyPromptTemplate
 
         batch_size = len(samples)

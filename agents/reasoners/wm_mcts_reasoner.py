@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 from typing import Callable, Any, Tuple, Self
-
 from rich.panel import Panel
 import copy
 
-from agents.generators import Generator
-from agents.reasoners.base_reasoner import BaseReasoner
+from agents.generators import Generator, LogProbs, ChatMessage
+from agents.reasoners import BaseReasoner
 from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.pubmedqa import filter_output_type, question_is_correct
 from agents.utils import get_error_details
-
-# from agents.mcts.bigtree.bigtree_llm_mcts import MCTS
-# from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
-# from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-# from agents.gsm8k.types import GSM8KProblem
 from agents.pubmedqa.utils import PubMedProblem
+from agents.mcts import BatchMCTS, MCTSNode
 
 class WorldModel:
     def __init__(self, generator: Generator) -> None:
@@ -35,13 +29,12 @@ class WorldModel:
                 'log_probs': sub_answer['log_probs'],
                 }
         
-    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str | float]]:
+    def batch_step_logprobs(self, answer_prompts: list[BasePromptTemplate]) -> list[dict[str, str|LogProbs]]:
         """ Batch generates the next state with log probabilities """
         answer_inputs = [answer_prompt.preprocess() for answer_prompt in answer_prompts]
         sub_answers = self.generator.generate_with_logprobs(answer_inputs)
         texts = [sub_answer for sub_answer in sub_answers['text']]
         log_probs = [log_prob for log_prob in sub_answers['log_probs']]
-
         return [{'text': text, 'log_probs': log_prob} 
                 for text, log_prob in zip(texts, log_probs)]
 
@@ -98,8 +91,6 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
         Attempts to generate an answer for a sample question; it will return - 
         Tuple[if successfully generated, and if answer was correct]
         """
-        from agents.mcts.bigtree.batch_bigtree_llm_mcts import MCTS
-        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
         question = sample['question']
         mcts = MCTS(question_prompt_base=self.question_prompt, answer_prompt_base=self.answer_prompt)
 
@@ -109,7 +100,7 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
         generated, correct = False, False
         message, panel = f'Answer Incorrect or failed to Generate for Question :(', None
 
-        root = BTMCTSNode(state=self.question_prompt,  # state is original question
+        root = MCTSNode(state=self.question_prompt,  # state is original question
                           action=None,
                           reward=None,
                           parent=None,
@@ -148,15 +139,13 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
             - A list of messages for each sample.
             - A list of panels (visualizations) for each sample.
         """
-        from agents.mcts.bigtree.batch_bigtree_llm_mcts import BatchMCTS
-        from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
         
         batch_size = len(samples)
         corrects = [False] * batch_size
         messages = ['Answer incorrect or failed to generate for question.'] * batch_size
         panels = [None] * batch_size
 
-        roots: list[BTMCTSNode] = []
+        roots: list[MCTSNode] = []
         for idx in range(batch_size): 
             # prime the prompts with the problem
             problem: PubMedProblem = samples[idx]['question']
@@ -165,7 +154,7 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
             question_prompt.add('user', content=problem)
             answer_prompt.add('user', content=problem)
 
-            root = BTMCTSNode(
+            root = MCTSNode(
                 state=question_prompt,
                 action=None,
                 reward=None,

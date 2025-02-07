@@ -9,7 +9,7 @@ import math
 import logging
 import numpy as np
 
-from agents.mcts.bigtree.node import State, Action, Reward, Computable, NodePath, MCTSNode
+from agents.mcts.bigtree.new_node import State, Action, Reward, Computable, NodePath, MCTSNode
 
 
 def win_lose(win: bool,

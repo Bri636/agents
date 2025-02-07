@@ -1,180 +1,41 @@
-""" Credit to: https://github.com/maitrix-org/llm-reasoners """
+""" Bigtree version of with LLM MCTS """
+
 from __future__ import annotations
-
-import pickle
-from os import PathLike
-import pickle
-import math
-from copy import deepcopy
-from typing import Generic, Optional, NamedTuple, Callable, Hashable
-import itertools
-from abc import ABC
-from collections import defaultdict
-from rich.console import Console
-from rich.table import Table
-from io import StringIO
+import copy
+from typing import Optional, Callable, Any, Literal, Tuple, Union
 import numpy as np
-from tqdm import trange
+from tqdm.rich import trange, tqdm
+import random, math, logging
+# display packages
+from rich.tree import Tree
+from rich.panel import Panel
+from rich.text import Text
 
-from agents.algorithms.tree_search.base import (SearchAlgorithm, WorldModel, SearchConfig, 
-                                                State, Action, Example, Trace)
+# imported classes
+from agents.prompts import BasePromptTemplate
+from agents.gsm8k.utils import filter_output_type, gsm_is_correct
+from agents.mcts.node import MCTSNode, NodePath, Computable
+from agents.reasoners.wm_reasoner import WorldModel, Actor
+from agents.search import SearchStrategies
 
-class MCTSNode(Generic[State, Action, Example]):
-    id_iter = itertools.count()
+def win_lose(win: bool, win_reward: float = 100, lose_reward: float = -50) -> float:
+    return win_reward if win else lose_reward
 
-    @classmethod
-    def reset_id(cls):
-        cls.id_iter = itertools.count()
-
-    def __init__(self, 
-                 state: Optional[State], 
-                 action: Optional[Action], 
-                 parent: "Optional[MCTSNode]" = None,
-                 fast_reward: float = 0., 
-                 fast_reward_details=None,
-                 is_terminal: bool = False, 
-                 calc_q: Callable[[list[float]], float] = np.mean
-                 ) -> None:
-        """
-        A node in the MCTS search tree
-
-        :param state: the current state
-        :param action: the action of the last step, i.e., the action from parent node to current node
-        :param parent: the parent node, None if root of the tree
-        :param fast_reward: an estimation of the reward of the last step
-        :param is_terminal: whether the current state is a terminal state
-        :param calc_q: the way to calculate the Q value from histories. Defaults: np.mean
-        """
-        self.id = next(MCTSNode.id_iter)
-        if fast_reward_details is None:
-            fast_reward_details = {}
-        self.cum_rewards: list[float] = []
-        self.fast_reward = self.reward = fast_reward
-        self.fast_reward_details = fast_reward_details
-        self.is_terminal = is_terminal
-        self.action = action
-        self.state = state
-        self.parent = parent
-        self.children: 'Optional[list[MCTSNode]]' = None
-        self.calc_q = calc_q
-        if parent is None:
-            self.depth = 0
-        else:
-            self.depth = parent.depth + 1
-
-    # noinspection PyPep8Naming
-    @property
-    def Q(self) -> float:
-        if self.state is None:
-            return self.fast_reward
-        else:
-            return self.calc_q(self.cum_rewards)
-        
-    def __str__(self) -> str:
-        # Using rich to capture formatted string for __str__
-        console = Console(file=StringIO(), width=60)
-        table = Table(title=f"Node ID: {self.id}", show_header=True, header_style="bold cyan")
-        
-        table.add_column("Attribute", style="dim")
-        table.add_column("Value")
-        
-        table.add_row("State", str(self.state))
-        table.add_row("Action", str(self.action))
-        table.add_row("Parent ID", str(self.parent.id if self.parent else "None"))
-        table.add_row("Q-Value", f"{self.Q:.2f}")
-        
-        console.print(table)
-        return console.file.getvalue()
-
-    def __repr__(self) -> str:
-        # Concise representation for __repr__
-        return f"MCTSNode(id={self.id}, state={self.state}, action={self.action}, Q={self.Q:.2f}), num_children={len(self.children)}"
-
-
-class MCTSResult(NamedTuple):
-    """ Simple Container Class for MCTS Output """
-    
-    terminal_state: State
-    cum_reward: float
-    trace: Trace
-    trace_of_nodes: list[MCTSNode]
-    tree_state: MCTSNode
-    trace_in_each_iter: list[list[MCTSNode]] = None
-    tree_state_after_each_iter: list[MCTSNode] = None
-    aggregated_result: Optional[Hashable] = None
-
-
-class MCTSAggregation(Generic[State, Action, Example], ABC):
-    def __init__(self, 
-                 retrieve_answer: Callable[[State], Hashable],
-                 weight_policy: str = 'edge'
-                 ):
-        """ 
-        Aggregates the results from a MCTS tree. Primary function is to traverse the search tree 
-        and aggregate results based on defined policy 
-        
-        :retrieve_answer: A callable function that retrieves an answer from a node's state. This answer is aggregated across the tree
-        
-        :weight_policy: A string that defines how to weight the results when aggregating them
-        """
-        
-        
-        assert weight_policy in ['edge', 'edge_inverse_depth', 'uniform']
-        self.retrieve_answer = retrieve_answer
-        self.weight_policy = weight_policy
-
-    def __call__(self, tree_state: MCTSNode[State, Action,Example]) -> Optional[Hashable]:
-        answer_dict = defaultdict(lambda: 0)
-
-        def visit(cur: MCTSNode[State, Action, Example]):
-            if cur.state is None:
-                return []
-            if cur.is_terminal:
-                answer = self.retrieve_answer(cur.state)
-                if answer is None:
-                    print("MCTSAggregation: no answer retrieved.")
-                    return []
-                if self.weight_policy == 'edge':
-                    answer_dict[answer] += cur.reward
-                elif self.weight_policy == 'edge_inverse_depth':
-                    answer_dict[answer] += cur.reward / cur.depth
-                elif self.weight_policy == 'uniform':
-                    answer_dict[answer] += 1.0
-                return [(answer, cur.depth)]
-            depth_list = defaultdict(list)
-            cur_list = []
-            for child in cur.children:
-                cur_list.extend(child_info := visit(child))
-                for answer, depth in child_info:
-                    depth_list[answer].append(depth)
-            for answer, depths in depth_list.items():
-                if self.weight_policy == 'edge':
-                    answer_dict[answer] += cur.reward
-                elif self.weight_policy == 'edge_inverse_depth':
-                    answer_dict[answer] += cur.reward / np.mean(depths)
-            return cur_list
-
-        visit(tree_state)
-
-        if len(answer_dict) == 0:
-            return None
-        
-        return max(answer_dict, key=lambda answer: answer_dict[answer])
-
-class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
+class MCTS:
     def __init__(self,
+                 question_prompt_base: BasePromptTemplate,
+                 answer_prompt_base: BasePromptTemplate,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
                  depth_limit: int = 5,
-                 n_iters: int = 10,
-                 cum_reward: Callable[[list[float]], float] = sum,
-                 calc_q: Callable[[list[float]], float] = np.mean,
-                 simulate_strategy: str | Callable[[list[float]], int] = 'max',
+                 num_iters: int = 10,
+                 cum_reward_func: Callable[[Computable]] = sum,
+                 calc_q_func: Callable[[Computable]] = np.mean,
+                 simulate_strategy: str | Callable[[Computable]] = 'max',
                  output_strategy: str = 'max_reward',
-                 uct_with_fast_reward: bool = True,
-                 aggregator: Optional[MCTSAggregation] = None,
-                 disable_tqdm: bool = True,
-                 node_visualizer: Callable[[MCTSNode], dict] = lambda x: x.__dict__
+                 use_tqdm: bool = True,
+                 reward_strategy: Literal['base'] = 'base',
+                 logger: Optional[logging.Logger] = None
                  ) -> None:
         """
         MCTS algorithm
@@ -193,245 +54,398 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                                          'last_iter': the last trajectory. May output a non-terminal node if the last iteration leads to a dead end
                                          'last_terminal_iter': the last trajectory with a terminal node
                                 Outputs *None* if no trajectory with terminal node but required
-        :param uct_with_fast_reward: if True, use fast_reward instead of reward for unvisited children in UCT
-                                     Otherwise, visit the *unvisited* children with maximum fast_reward first
+
+        Note - Since no fast_reward instead of reward for unvisited children in UCT we HAVE to visit the *unvisited* children with maximum fast_reward first
         """
         super().__init__()
-        self.world_model = None
-        self.search_config = None
-        self.output_trace_in_each_iter = output_trace_in_each_iter
-        self.w_exp = w_exp
-        self.depth_limit = depth_limit
-        self.n_iters = n_iters
-        self.cum_reward = cum_reward
-        self.calc_q = calc_q
-        default_simulate_strategies: dict[str, Callable[[list[float]], int]] = {
+        rollout_strategies: dict[str, Callable[[list[float]], int]] = {
             'max': lambda x: np.argmax(x),
             'sample': lambda x: np.random.choice(len(x), p=x),
             'random': lambda x: np.random.choice(len(x)),
         }
-        self.simulate_choice: Callable[[list[float]], int] = default_simulate_strategies.get(simulate_strategy,
-                                                                                             simulate_strategy)
-        assert output_strategy in ['max_reward', 'follow_max', 'max_visit', 'max_iter', 'last_iter',
-                                   'last_terminal_iter']
+
+        reward_strategies = {
+            'base': (win_lose, np.mean)  # stored as
+        }
+
+        self.simulate_choice: Callable[[list[float]], int] = rollout_strategies.get(simulate_strategy,
+                                                                                    simulate_strategy)
+
+        self.output_trace_in_each_iter: bool = output_trace_in_each_iter
+        self.w_exp: float = w_exp
+        self.depth_limit: int = depth_limit
+        self.num_iters: int = num_iters
+        self.cum_reward_func: Callable = cum_reward_func
+        self.calc_q_func: Callable = calc_q_func
+        assert output_strategy in ['max_reward', 'follow_max',
+                                   'max_visit', 'max_iter',
+                                   'last_iter', 'last_terminal_iter']
         self.output_strategy = output_strategy
-        self.uct_with_fast_reward = uct_with_fast_reward
         self._output_iter: list[MCTSNode] = None
         self._output_cum_reward = -math.inf
-        self.trace_in_each_iter: list[list[MCTSNode]] = None
-        self.root: Optional[MCTSNode] = None
-        self.disable_tqdm = disable_tqdm
-        self.node_visualizer = node_visualizer
-        self.aggregator = aggregator
+        self.trace_in_each_iter = []
+        self.use_tqdm: bool = use_tqdm
+        self.terminal_reward_strategy, self.reward_strategy = reward_strategies.get(
+            reward_strategy)
 
-    def iterate(self, node: MCTSNode) -> list[MCTSNode]:
-        """ Runs a single iteration of MCTS on a given node and returns the path of nodes 
-        
-        Inputs
-        ======
-        :node: Root Node to run on 
-        
-        Outputs: 
-        =======
-        :path: List of Nodes that corresponds to the optimal path
-        """
-        
-        path = self._select(node) # select a path from root node down to leaf node or not that is not fully expanded
-
-        if not self._is_terminal_with_depth_limit(path[-1]): # if last node is not terminal 
-            self._expand(path[-1]) # expand on last node --> make all of the children 
-            self._simulate(path) # simulate the path
-            
-        cum_reward = self._back_propagate(path)
-        
-        if self.output_strategy == 'max_iter' and path[-1].is_terminal and cum_reward > self._output_cum_reward:
-            self._output_cum_reward = cum_reward
-            self._output_iter = path
-        if self.output_strategy == 'last_iter':
-            self._output_cum_reward = cum_reward
-            self._output_iter = path
-        if self.output_strategy == 'last_terminal_iter' and path[-1].is_terminal:
-            self._output_cum_reward = cum_reward
-            self._output_iter = path
-            
-        return path
+        # base question prompt used for expansion and simulation; should be a blank template
+        question_prompt_base.reset(), answer_prompt_base.reset()
+        # base answer prompt used for expansion and simulation
+        self._question_prompt_base = copy.deepcopy(question_prompt_base)
+        self._answer_prompt_base = copy.deepcopy(answer_prompt_base)
+        self.logger = logger
 
     def _is_terminal_with_depth_limit(self, node: MCTSNode) -> bool:
-        """ Returns bool if node is terminal or if (depth of the tree >= the limit) """
-        return node.is_terminal or node.depth >= self.depth_limit
+        """ True if node is terminal or depth limit exceeded """
+        return bool(node.is_terminal
+                    or node.depth >= self.depth_limit)
 
-    def _select(self, node: MCTSNode) -> list[MCTSNode]:
+    def _uct(self, node: MCTSNode) -> float:
         """ 
-        Traverses tree from input node via selecting max UCT child until terminal, 
-        then returns list of nodes representing path
+        Gets the current UCT value for the node 
+
+        :param node: 
+
+         - Note: cum_rewards = num full rounds (expansion -> simulation -> backprop) involving that node
+
+         - N = Calculates number times parent node visited via cum_rewards
+
+         - n_i = number times child node visited via cum_rewards
         """
-        path = []
-        while True:
-            path.append(node)
-            # if node has no children, return the path  
-            if node.children is None or len(node.children) == 0 or self._is_terminal_with_depth_limit(node):
-                return path
-            # else, the next node is the child node with best UCT
-            node = self._uct_select(node)
+        N = len(node.parent.cum_rewards)  # num times parent node visited -
+        n_i = max(1, len(node.cum_rewards))  # num times child node visited
+        term = self.w_exp * np.sqrt(np.log(N) / n_i)  # left term in UCT
+
+        return node.Q + term
 
     def _uct_select(self, node: MCTSNode) -> MCTSNode:
         """ 
         Supposing the node is fully expanded (aka max children), selects and returns the best child node (maxes UCT) out of the children 
-        
+
         :node: the current node you are at in your tree search
-        
+
         Note - This is called recursively in "_select" as you traverse the tree
+        Note - no fast reward, so node must be fully expanded
         """
-        # all children visited for selecting best one 
-        if self.uct_with_fast_reward or all(child.state is not None for child in node.children):
-            # remember, self._uct(child) is applied to each element in node.children, then the max is returned
-            return max(node.children, key=self._uct) # finds the max 
-        # filter for unvisited children, then get the max fast reward
-        else:
-            unvisited_children = filter(lambda child: child.state is None, node.children)
-            
-            return max(unvisited_children, key=lambda child: child.fast_reward)
-        
-    def _uct(self, node: MCTSNode) -> float:
-        """ Gets the current UCT value for the node """
-        return node.Q + self.w_exp * np.sqrt(np.log(len(node.parent.cum_rewards)) 
-                                             / max(1, len(node.cum_rewards)))
+        return max(node.children, key=self._uct)
 
-    def _expand(self, node: MCTSNode) -> None:
-        """ 
-        Expand the node to make all its children
-        
-        Note - Does not return anything, it just sets the attributes of the current node
-        """
-        # if current ndoe is
-        if node.state is None:
-            node.state, aux = self.world_model.step(node.parent.state, node.action)
-            # reward is calculated after the state is updated, so that the
-            # information can be cached and passed from the world model
-            # to the reward function with **aux without repetitive computation
-            node.reward, node.reward_details = self.search_config.reward(node.parent.state, 
-                                                                         node.action, 
-                                                                         **node.fast_reward_details, 
-                                                                         **aux)
-            node.is_terminal = self.world_model.is_terminal(node.state)
+    def select(self, node: MCTSNode) -> NodePath:
+        ''' Goes through start node, and traverses via selecting best uct of children. If no children or terminal or depth-limit hit, return path as is '''
+        path = []
+        while True:
+            path.append(node)
+            if self._is_terminal_with_depth_limit(node) or len(node.children) == 0:
+                return path
+            best_child = self._uct_select(node)
+            node = best_child  # set node as best child
 
-        # if node is terminal, just return
-        if node.is_terminal:
-            return
+    def expand(self,
+               node: MCTSNode,
+               actor: Actor,
+               world_model: WorldModel,
+               num_children: int,
+               sample: dict,
+               sample_idx: int, 
+               verbose: bool = False
+               ) -> None:
+        """ Expands last node of path into d children and updates the nodes internal children attribute """
+        # copy prompt history from node state
+        self._question_prompt_base.copy_history(node.state)
+        self._answer_prompt_base.copy_history(node.state)
 
-        # else, get action space
+        sub_questions = [actor.act(node.state) for _ in range(num_children)]
+
         children = []
-        actions = self.search_config.get_actions(node.state)
-        # for each action, make a child and set the action used to get there
-        for action in actions:
-            fast_reward, fast_reward_details = self.search_config.fast_reward(node.state, action)
-            # 
-            child = MCTSNode(state=None, action=action, parent=node,
-                             fast_reward=fast_reward, fast_reward_details=fast_reward_details, calc_q=self.calc_q)
-            children.append(child)
+        for sub_question in sub_questions:
+
+            self._answer_prompt_base.add(
+                **{'role': 'user', 'content': sub_question})
+            sub_answer, log_prob = world_model.step_logprobs(
+                self._answer_prompt_base).values()
+            self._question_prompt_base.add(
+                **{'role': 'assistant', 'content': sub_question})
+            self._question_prompt_base.add(
+                **{'role': 'user', 'content': sub_answer})
+
+            if filter_output_type(sub_answer) == 'final_answer':
+                out, message = gsm_is_correct(sample_idx, sub_answer, sample)
+                if verbose:
+                    print(message)
+                reward: float | int = self.terminal_reward_strategy(out)
+                terminated = True
+            else:
+                reward = self.reward_strategy(
+                    log_prob)  # get log_prob as reward
+                terminated = False  # set as not done
+                
+            child_node = MCTSNode(state=copy.deepcopy(self._question_prompt_base),
+                                    action=sub_question,
+                                    reward=reward,
+                                    parent=node,
+                                    is_terminal=terminated,
+                                    calc_q=self.calc_q_func
+                                    )
+            self._answer_prompt_base.pop()
+            self._question_prompt_base.pop([-1, -2])
+            children.append(child_node)
 
         node.children = children
+        self._question_prompt_base.reset()
+        self._answer_prompt_base.reset()
 
-    def _simulate(self, path: list[MCTSNode]):
-        node = path[-1]
-        while True:
-            if node.state is None:
-                self._expand(node)
-            if self._is_terminal_with_depth_limit(node) or len(node.children) == 0:
-                return
-            fast_rewards = [child.fast_reward for child in node.children]
-            node = node.children[self.simulate_choice(fast_rewards)]
-            path.append(node)
+    def simulate_node(self,
+                      path: NodePath,
+                      actor: Actor,
+                      world_model: WorldModel,
+                      max_tries: int,
+                      sample: dict,
+                      sample_idx: int, 
+                      verbose: bool = False
+                      ) -> bool:
+        """ Simulates a single node until end of problem and returns a flag if successfully simulated or not """
+        # randomly select child
+        child_idx: int = random.sample(range(len(path[-1].children)), 1)[0]  # randomly choose a child
+        node_to_sim: MCTSNode = path[-1].children[child_idx]
+        # copy child state for simulation
+        self._question_prompt_base.copy_history(node_to_sim.state)
+        self._answer_prompt_base.copy_history(node_to_sim.state)
 
-    def _back_propagate(self, path: list[MCTSNode]):
-        rewards = []
-        cum_reward = -math.inf
-        for node in reversed(path):
+        rollout_rewards = []
+        for _ in range(1, max_tries + 1):
+            # generating sub-question
+            sub_question = actor.act(self._question_prompt_base)
+            self._question_prompt_base.add(role='assistant', content=sub_question)
+            self._answer_prompt_base.add(role='user', content=sub_question)
+            # generating sub-answer
+            step_result = world_model.step_logprobs(self._answer_prompt_base)
+            sub_answer = step_result.get('text')
+            log_prob = step_result.get('log_probs')
+            # updating prompts
+            self._question_prompt_base.add(role='user', content=sub_answer)
+            self._answer_prompt_base.add(role='assistant', content=sub_answer)
+            # collecting reward
+            rollout_rewards.append(self.reward_strategy(log_prob))
+            # Check for termination condition
+            if filter_output_type(sub_answer) == 'final_answer':
+                out, message = gsm_is_correct(sample_idx, sub_answer, sample)
+                rollout_rewards.append(self.terminal_reward_strategy(out))
+                if verbose:
+                    print(message)
+                # reset prompts to base again
+                self._question_prompt_base.reset()
+                self._answer_prompt_base.reset()
+                # idea return flag, if flag then skip backpropagation and then move to next
+                rollout_reward = sum(rollout_rewards)
+                node = path[-1].children[child_idx]
+                node.reward = rollout_reward
+                path.append(node)
+                # successful simulation
+                return True
+            # exit if prompt exceeds limit aka its a run-on
+            agents = (actor, world_model)
+            prompts = (self._question_prompt_base, self._answer_prompt_base)
+            if any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
+                return False  # Skip backpropagation due to prompt limit
+        # if failed in number of tries, exit
+        # reset prompts to base again
+        self._question_prompt_base.reset()
+        self._answer_prompt_base.reset()
+        return False
+
+    def back_propagate(self, path: NodePath) -> float:
+        """ 
+        Updates each node in the path with the cumulative rewards from rollout and returns the updated path and the cum_reward for the root 
+
+        ex. leaf node gets rollout reward 
+        leaf node - 1 gets rollout reward + own reward 
+        leaf node - 2 gets rollout reward + leaf node -1 + own reward 
+        ...
+
+        :param path - list[MCTSNode]: list of nodes corresponding to search path 
+        :param child_idx - int: Inside the leaf node, the idx of its expanded child node we simulated
+        """
+        rewards = []  # holds rewards for each node
+        for node in reversed(path):  # leaf --> root
+            # ex. leaf: rewards = [100]; leaf-1: rewards = [100, 10]; leaf-2: rewards = [100, 10, 15], ...
             rewards.append(node.reward)
-            cum_reward = self.cum_reward(rewards[::-1])
+            # NOTE: work-around for node.reward = None => we filter this out
+            rewards = list(filter(lambda x: x != None, rewards))
+            # self.cum_rewards callable sum; ex. sum([10, 100]), sum([15, 10, 100])
+            cum_reward = self.cum_reward_func(rewards[::-1])
+            # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
             node.cum_rewards.append(cum_reward)
+
         return cum_reward
-
-    def _dfs_max_reward(self, path: list[MCTSNode]) -> tuple[float, list[MCTSNode]]:
-        cur = path[-1]
-        if cur.is_terminal:
-            return self.cum_reward([node.reward for node in path[1:]]), path
-        if cur.children is None:
-            return -math.inf, path
-        visited_children = [x for x in cur.children if x.state is not None]
-        if len(visited_children) == 0:
-            return -math.inf, path
-        return max((self._dfs_max_reward(path + [child]) for child in visited_children), key=lambda x: x[0])
-
-    def search(self):
-        self._output_cum_reward = -math.inf 
-        self._output_iter = None
-        self.root = MCTSNode(state=self.world_model.init_state(), action=None, parent=None, calc_q=self.calc_q)
-        if self.output_trace_in_each_iter:
-            self.trace_in_each_iter = []
-
-        for _ in trange(self.n_iters, disable=self.disable_tqdm, desc='MCTS iteration', leave=False):
-            path = self.iterate(self.root)
-            if self.output_trace_in_each_iter:
-                self.trace_in_each_iter.append(deepcopy(path))
-
-        if self.output_strategy == 'follow_max':
-            self._output_iter = []
-            cur = self.root
-            while True:
-                self._output_iter.append(cur)
-                if cur.is_terminal:
-                    break
-                visited_children = [x for x in cur.children if x.state is not None]
-                if len(visited_children) == 0:
-                    break
-                cur = max(visited_children, key=lambda x: x.reward)
-            self._output_cum_reward = self.cum_reward([node.reward for node in self._output_iter[1::-1]])
-        if self.output_strategy == 'max_reward':
-            self._output_cum_reward, self._output_iter = self._dfs_max_reward([self.root])
-            if self._output_cum_reward == -math.inf:
-                self._output_iter = None
-
-    def __call__(self,
-                 world_model: WorldModel[State, Action, Example],
-                 search_config: SearchConfig[State, Action, Example],
-                 log_file: Optional[str] = None,
-                 **kwargs
-                 ) -> MCTSResult:
-        MCTSNode.reset_id()
-        self.world_model = world_model
-        self.search_config = search_config
-
-        self.search()
-
-        if self._output_iter is None:
-            terminal_state = trace = None
+    
+    def iterate(
+        self,
+        node: MCTSNode,
+        actor: Actor,
+        world_model: WorldModel,
+        num_children: int,
+        sample: dict,
+        sample_idx: int,
+        max_tries: int
+    ) -> Union[None, NodePath]:
+        """Runs one iteration of MCTS on the input node using the actor-world model strategy."""
+        path = self.select(node)
+        # Check if the selected node is terminal or the depth limit is reached
+        if self._is_terminal_with_depth_limit(path[-1]):
+            cum_reward = self.back_propagate(path)
         else:
-            terminal_state = self._output_iter[-1].state
-            trace = [node.state for node in self._output_iter], [node.action for node in self._output_iter[1:]]
-        if self.output_trace_in_each_iter:
-            trace_in_each_iter = self.trace_in_each_iter
-            tree_state_after_each_iter = [trace[0] for trace in trace_in_each_iter]
-        else:
-            trace_in_each_iter = tree_state_after_each_iter = None
-        result = MCTSResult(terminal_state=terminal_state,
-                            cum_reward=self._output_cum_reward,
-                            trace=trace,
-                            trace_of_nodes=self._output_iter,
-                            tree_state=self.root,
-                            trace_in_each_iter=trace_in_each_iter,
-                            tree_state_after_each_iter=tree_state_after_each_iter)
-        if self.aggregator is not None:
-            result = MCTSResult(
-                terminal_state=result.terminal_state,
-                cum_reward=result.cum_reward,
-                trace=result.trace,
-                trace_of_nodes=result.trace_of_nodes,
-                tree_state=result.tree_state,
-                trace_in_each_iter=result.trace_in_each_iter,
-                tree_state_after_each_iter=result.tree_state_after_each_iter,
-                aggregated_result=self.aggregator(result.tree_state),
+            self.expand(path[-1], actor, world_model, num_children, sample, sample_idx)
+            success = self.simulate_node(
+                path, actor, world_model, max_tries, sample, sample_idx
             )
-        return result
-    
-    
+            if success:
+                cum_reward = self.back_propagate(path)
+            else:
+                return None
+        # Update the output based on the specified strategy
+        if self.output_strategy == 'max_iter' \
+            and path[-1].is_terminal \
+            and cum_reward > self._output_cum_reward:
+            self._output_cum_reward = cum_reward
+            self._output_iter = path
+        elif self.output_strategy == 'last_iter':
+            self._output_cum_reward = cum_reward
+            self._output_iter = path
+        elif self.output_strategy == 'last_terminal_iter' and path[-1].is_terminal:
+            self._output_cum_reward = cum_reward
+            self._output_iter = path
+
+        return path
+
+    def search(self,
+               root: MCTSNode,
+               actor: Actor,
+               world_model: WorldModel,
+               num_children: int,
+               sample: dict,
+               sample_idx: int,
+               max_tries: int
+               ) -> Tuple[list[MCTSNode], float]:
+        """ Search for the optimal path based on strategy """
+        # run mcts for n times and store each explored path
+        for _ in trange(self.num_iters, disable=self.use_tqdm, desc='MCTS iteration', leave=False):
+            path = self.iterate(root, actor, world_model,
+                                num_children, sample, sample_idx, max_tries)
+            if path is None:  # if none skip iteration
+                message = f'\nError in llm parsing, or reached terminal, skipping MCTS iteration...\n'
+                self.logger.info(message) if self.logger else print(message)
+                continue
+            if self.output_trace_in_each_iter:
+                self.trace_in_each_iter.append(copy.deepcopy(path))
+
+        self._output_iter, self._output_cum_reward = SearchStrategies.execute_strategy(root,
+                                                                                       self.cum_reward_func,
+                                                                                       self.output_strategy)
+
+        return self._output_iter, self._output_cum_reward
+
+    def print_with_optimal(self, root: MCTSNode) -> Panel:
+        optimal_path, max_reward = SearchStrategies.execute_strategy(root,
+                                                                     self.cum_reward_func,
+                                                                     self.output_strategy)
+        optimal_node_ids = set(node.id for node in optimal_path)
+        rich_tree = self.build_tree(root, optimal_node_ids)
+        title = Text.assemble(
+        "Reasoning Trace - Max Reward = ", 
+        (f"{max_reward}", "bold red"), 
+        style="bold purple4"
+    )
+        panel = Panel(
+            rich_tree,
+            title=title,
+            border_style="white",
+            expand=True
+        )
+        return panel
+        
+    def build_tree(self, node: MCTSNode, optimal_node_ids=None):
+        if node is None:
+            return Tree("[bold red]None[/bold red]")
+        parent_id = node.parent.id if node.parent else None
+        if node.children:
+            children_ids = [child.id for child in node.children]
+        else:
+            children_ids = []
+        node_Q = f"{node.Q:.2f}" if node.Q is not None else "None"
+        node_reward = f"{node.reward:.2f}" if node.reward is not None else "None"
+        in_optimal_path = optimal_node_ids and node.id in optimal_node_ids
+        terminal_color = "green" if node.is_terminal else "red"
+        if in_optimal_path:
+            node_info = (
+                f"[bold red]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold red]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold red]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold red]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold red]Terminal:[/] [bold {terminal_color}]{node.is_terminal}[/] | "
+                f"[bold red]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+        else:
+            node_info = (
+                f"[bold cyan]Node ID:[/] [green]{node.id}[/] | "
+                f"[bold cyan]Parent ID:[/] [magenta]{parent_id}[/] | "
+                f"[bold cyan]Q-Value:[/] [yellow]{node_Q}[/] | "
+                f"[bold cyan]Reward:[/] [yellow]{node_reward}[/] | "
+                f"[bold cyan]Terminal:[/] [{terminal_color}]{node.is_terminal}[/] | "
+                f"[bold cyan]Children IDs:[/] [blue]{children_ids}[/]"
+            )
+
+        rich_tree = Tree(node_info)
+        if node.children:
+            for child in node.children:
+                child_tree = self.build_tree(child, optimal_node_ids)
+                rich_tree.add(child_tree)
+
+        return rich_tree
+
+    def guess_answer(self,
+                     root: MCTSNode,
+                     actor: Actor,
+                     world_model: WorldModel,
+                     num_children: int,
+                     sample: dict,
+                     sample_idx: int,
+                     max_tries: int, 
+                     verbose: bool = True
+                     ) -> Tuple[str, list[MCTSNode], Panel]:
+        """ Generates an answer for a gsm8k problem via mcts then inference """  
+        # run inference from best current node
+        optimal_path, _ = self.search(root, actor, world_model, num_children,
+                                        sample, sample_idx, max_tries)
+        if verbose: 
+            panel = self.print_with_optimal(root)
+        # if best leaf is not terminal, then
+        if optimal_path[-1].is_terminal:
+            answer: str = optimal_path[-1].state.history[-1].content
+            return answer, optimal_path, panel
+        else:
+            self._question_prompt_base.copy_history(optimal_path[-1].state)
+            self._answer_prompt_base.copy_history(optimal_path[-1].state)
+            
+            for _ in range(1, max_tries + 1):
+                # generating sub-question
+                sub_question = actor.act(self._question_prompt_base)
+                self._question_prompt_base.add(role='assistant', content=sub_question)
+                self._answer_prompt_base.add(role='user', content=sub_question)
+                # generating sub-answer
+                step_result = world_model.step_logprobs(self._answer_prompt_base)
+                sub_answer = step_result.get('text')
+                log_prob = step_result.get('log_probs')
+                # updating prompts
+                self._question_prompt_base.add(role='user', content=sub_answer)
+                self._answer_prompt_base.add(role='assistant', content=sub_answer)
+                # using agents and prompts to test if condition below
+                agents = (actor, world_model)
+                prompts = (self._question_prompt_base, self._answer_prompt_base)
+                # if final answer reached or exceed prompt limit, break from loop 
+                if filter_output_type(sub_answer) == "final_answer": 
+                    break
+                elif any(agent.prompt_exceeds_limit(prompt) for agent, prompt in zip(agents, prompts)):
+                    break
+            self._question_prompt_base.reset()
+            self._answer_prompt_base.reset()
+            
+            return sub_answer, optimal_path, panel

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 import copy
-from typing import Optional, Callable, Any, Literal, Tuple
-from rich.console import Console
+from typing import Optional, Callable, Any, Literal, Tuple, Union
 import numpy as np
 from tqdm.rich import trange, tqdm
 import random
@@ -11,18 +10,16 @@ import math
 import logging
 # display packages
 from rich.tree import Tree
-from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
 # imported classes
+from agents.prompts import BasePromptTemplate
+from agents.pubmedqa import PubMedProblem
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
-from agents.mcts.bigtree.bigtree_mcts_node import BTMCTSNode
-from agents.reasoners.wm_mcts_reasoner import WorldModel, Actor
-from agents.mcts.bigtree.mcts_utils import SearchStrategies
-from agents.mcts.bigtree import Prompt, Computable, NodePath
-from agents.gsm8k import GSM8KProblem
-from agents.prompts.base_prompt_template import BasePromptTemplate
+from agents.mcts.node import MCTSNode, NodePath, Computable
+from agents.reasoners.wm_reasoner import WorldModel, Actor
+from agents.search import SearchStrategies
 
 def win_lose(win: bool,
              win_reward: float = 100,
@@ -33,15 +30,15 @@ def win_lose(win: bool,
 
 class BatchMCTS:
     def __init__(self,
-                 question_prompt_base: Prompt,
-                 answer_prompt_base: Prompt,
+                 question_prompt_base: BasePromptTemplate,
+                 answer_prompt_base: BasePromptTemplate,
                  output_trace_in_each_iter: bool = False,
                  w_exp: float = 1.,
                  depth_limit: int = 5,
                  num_iters: int = 10,
-                 cum_reward_func: Callable[[Computable], float] = sum,
-                 calc_q_func: Callable[[Computable], float] = np.mean,
-                 simulate_strategy: str | Callable[[Computable], int] = 'max',
+                 cum_reward_func: Callable[[Computable]] = sum,
+                 calc_q_func: Callable[[Computable]] = np.mean,
+                 simulate_strategy: str | Callable[[Computable]] = 'max',
                  output_strategy: str = 'max_reward',
                  use_tqdm: bool = True,
                  reward_strategy: Literal['base'] = 'base',
@@ -108,12 +105,12 @@ class BatchMCTS:
         self._answer_prompt_base = copy.deepcopy(answer_prompt_base)
         self.logger = logger
 
-    def _is_terminal_with_depth_limit(self, node: BTMCTSNode) -> bool:
+    def _is_terminal_with_depth_limit(self, node: MCTSNode) -> bool:
         """ True if node is terminal or depth limit exceeded """
         return bool(node.is_terminal
                     or node.depth >= self.depth_limit)
 
-    def _uct(self, node: BTMCTSNode) -> float:
+    def _uct(self, node: MCTSNode) -> float:
         """ 
         Gets the current UCT value for the node 
 
@@ -131,7 +128,7 @@ class BatchMCTS:
 
         return node.Q + term
 
-    def _uct_select(self, node: BTMCTSNode) -> BTMCTSNode:
+    def _uct_select(self, node: MCTSNode) -> MCTSNode:
         """ 
         Supposing the node is fully expanded (aka max children), selects and returns the best child node (maxes UCT) out of the children 
 
@@ -142,7 +139,7 @@ class BatchMCTS:
         """
         return max(node.children, key=self._uct)
 
-    def select(self, root: BTMCTSNode) -> list[BTMCTSNode]:
+    def select(self, root: MCTSNode) -> NodePath:
         ''' Goes through start node, and traverses via selecting best uct of children. If no children or terminal or depth-limit hit, return path as is '''
         path = []
         while True:
@@ -152,14 +149,14 @@ class BatchMCTS:
             best_child = self._uct_select(root)
             root = best_child  # set node as best child
 
-    def batch_select(self, roots: list[BTMCTSNode]) -> list[list[BTMCTSNode]]:
+    def batch_select(self, roots: list[MCTSNode]) -> list[NodePath]:
         """ Batch selection of multiple best paths for list of roots"""
         paths = [self.select(root)
                  for root in roots]
         return paths
 
     def batch_expand(self,
-                     leaf_nodes: list[BTMCTSNode],
+                     leaf_nodes: list[MCTSNode],
                      actor: Actor,
                      world_model: WorldModel,
                      num_children: int,
@@ -171,9 +168,9 @@ class BatchMCTS:
         Expands a list of nodes into their children and updates the nodes' internal children attributes.
         """
         # Initialize lists to hold prompts and references
-        question_prompts: list[Prompt] = []
-        answer_prompts: list[Prompt] = []
-        node_refs: list[BTMCTSNode] = []
+        question_prompts: list[BasePromptTemplate] = []
+        answer_prompts: list[BasePromptTemplate] = []
+        node_refs: list[MCTSNode] = []
         sample_refs: list[int] = []
         sample_idx_refs: list[int] = []
         node_true_idx_refs: list[int] = []
@@ -231,7 +228,7 @@ class BatchMCTS:
                 reward = self.reward_strategy(log_prob)
                 terminated = False
 
-            child_node = BTMCTSNode(state=copy.deepcopy(question_prompts[idx]),
+            child_node = MCTSNode(state=copy.deepcopy(question_prompts[idx]),
                                     action=sub_questions[idx],
                                     reward=reward,
                                     parent=node_refs[idx],
@@ -254,15 +251,15 @@ class BatchMCTS:
                             actor: Actor,
                             world_model: WorldModel,
                             max_tries: int,
-                            samples: list[GSM8KProblem],
+                            samples: list[PubMedProblem],
                             sample_indices: list[int],
                             verbose: bool = False
                             ) -> list[bool]:
         """ Simulates a single node until end of problem and returns a flag if successfully simulated or not """
         # prompts to simulate
-        nodes_to_sim: list[BTMCTSNode] = []
-        question_prompts: list[Prompt] = []
-        answer_prompts: list[Prompt] = []
+        nodes_to_sim: list[MCTSNode] = []
+        question_prompts: list[BasePromptTemplate] = []
+        answer_prompts: list[BasePromptTemplate] = []
         # masks for info for each path
         active_mask: list[bool] = []  # flag for which paths to keep iterating
         # batch stores the return for each paths
@@ -305,7 +302,7 @@ class BatchMCTS:
                     role='assistant', content=sub_questions[idx])
                 answer_prompts[i].add(role='user', content=sub_questions[idx])
             # Generate sub-answers with log_probs in batch
-            active_answer_prompts: list[Prompt] = [
+            active_answer_prompts: list[BasePromptTemplate] = [
                 answer_prompts[i] for i in active_indices]
             step_results: list[dict] = world_model.batch_step_logprobs(
                 active_answer_prompts)
@@ -403,7 +400,7 @@ class BatchMCTS:
 
     def batch_iterate(
         self,
-        roots: list[BTMCTSNode],
+        roots: list[MCTSNode],
         actor: Actor,
         world_model: WorldModel,
         num_children: int,
@@ -436,10 +433,10 @@ class BatchMCTS:
             # get sim indices and samples we need for learning - corresponds to the paths we want to expand and sim
             sim_indices: list[int] = [idx for idx, is_term in zip(
                 sample_indices, terminal_indices) if not is_term]
-            sim_samples: list[GSM8KProblem] = [sample for sample, is_term in zip(
+            sim_samples: list[PubMedProblem] = [sample for sample, is_term in zip(
                 samples, terminal_indices) if not is_term]
             # get all leaf nodes to expand
-            leaves_to_expand: list[BTMCTSNode] = [path[-1]
+            leaves_to_expand: list[MCTSNode] = [path[-1]
                                                   for path in sim_paths]
             self.batch_expand(leaves_to_expand, actor, world_model,
                               num_children, sim_samples, sim_indices)
@@ -463,7 +460,7 @@ class BatchMCTS:
         return paths
 
     def batch_search(self,
-                     roots: list[BTMCTSNode],
+                     roots: list[MCTSNode],
                      actor: Actor,
                      world_model: WorldModel,
                      num_children: int,
@@ -494,7 +491,7 @@ class BatchMCTS:
         return self._output_iters, self._output_cum_rewards
 
     def batch_guess_answer(self,
-                           roots: list[BTMCTSNode],
+                           roots: list[MCTSNode],
                            actor: Actor,
                            world_model: WorldModel,
                            num_children: int,
@@ -559,8 +556,8 @@ class BatchMCTS:
                 break 
 
             # Prepare active prompts
-            active_question_prompts: list[Prompt] = [question_prompts[i] for i in active_indices]
-            active_answer_prompts: list[Prompt] = [answer_prompts[i] for i in active_indices]
+            active_question_prompts: list[BasePromptTemplate] = [question_prompts[i] for i in active_indices]
+            active_answer_prompts: list[BasePromptTemplate] = [answer_prompts[i] for i in active_indices]
             
             # Generate sub-questions in batch
             sub_questions = actor.batch_act(active_question_prompts)
@@ -602,7 +599,7 @@ class BatchMCTS:
         # Return the answers, optimal paths, and panels
         return answers, optimal_paths, panels
 
-    def construct_panel(self, root: BTMCTSNode, sample_idx: int) -> Panel:
+    def construct_panel(self, root: MCTSNode, sample_idx: int) -> Panel:
         """ Returns a tree image object with optimal path highlighted """
         # NOTE - potential issue with this
         optimal_path, max_reward = SearchStrategies.execute_strategy(
@@ -622,7 +619,7 @@ class BatchMCTS:
         )
         return panel
 
-    def build_tree(self, node: BTMCTSNode, optimal_node_ids=None):
+    def build_tree(self, node: MCTSNode, optimal_node_ids=None):
         if node is None:
             return Tree("[bold red]None[/bold red]")
         parent_id = node.parent.id if node.parent else None
