@@ -388,18 +388,30 @@ class BatchMCTS:
                 terminal_mask.append(False)
                 simulate_paths.append(path)
         terminal_mask = np.array(terminal_mask, dtype=bool)
-        breakpoint()
+        sample_indices = np.array(sample_indices)
+        # if terminal paths, directly backpropagate them update our output trace
         if terminal_paths:
-            terminal_sample_indices: list[int] = [idx for idx, is_term in zip(sample_indices, terminal_indices) if is_term]
-            cum_rewards_terminal: list[float] = self.batch_back_propagate(terminal_paths)
-            # Update outputs for terminal paths
-            for path, cum_reward, sample_idx in zip(terminal_paths, cum_rewards_terminal, terminal_sample_indices):
+            cum_rewards_terminal = self.batch_back_propagate(terminal_paths)
+            for path, cum_reward, sample_idx in zip(terminal_paths, 
+                                                    cum_rewards_terminal, 
+                                                    sample_indices[terminal_mask]):
                 self._update_output(path, cum_reward, sample_idx)
-
-        if sim_paths:
+        # else. 
+        if simulate_paths:
+            self.batch_expand(leaf_nodes=[path[-1] for path in simulate_paths],
+                              actor=actor, 
+                              world_model=world_model,
+                              num_children=num_children,
+                              samples=np.array(samples, dtype=object)[~terminal_mask], 
+                              sample_indices=sample_indices[~terminal_mask]
+                              )
+            # TODO: END OF WHAT I DID SO FAR
+            breakpoint()
+            breakpoint()
+            
             # get sim indices and samples we need for learning - corresponds to the paths we want to expand and sim
-            sim_indices: list[int] = [idx for idx, is_term in zip(
-                sample_indices, terminal_indices) if not is_term]
+            sim_indices: list[int] = [idx for idx, is_term 
+                                      in zip(sample_indices, terminal_mask) if not is_term]
             sim_samples: list[PubMedProblem] = [sample for sample, is_term in zip(
                 samples, terminal_indices) if not is_term]
             # get all leaf nodes to expand
