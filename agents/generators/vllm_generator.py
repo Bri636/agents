@@ -139,7 +139,7 @@ class VLLMGenerator(BaseLLMGenerator):
         for log_prob_dict in log_probs:
             log_prob_obj: Logprob = next(iter(log_prob_dict.values()))  # extract logprobs object
             log_prob = log_prob_obj.logprob
-            log_prob_seq.append(np.array(log_prob))
+            log_prob_seq.append(log_prob)
         return log_prob_seq
 
     def generate_with_logprobs(self, prompts: ChatMessage) -> dict[list[str], list[LogProbs]]:
@@ -166,6 +166,6 @@ class VLLMGenerator(BaseLLMGenerator):
                                 for output in outputs]
         log_probs: list[dict[int, Logprob]] = [output.outputs[0].logprobs 
                                                for output in outputs]
-        log_prob_seqs: list[list[float]] = [self._extract_log_probs(log_prob)
+        log_prob_seqs: list[np.ndarray] = [np.array(self._extract_log_probs(log_prob))
                                            for log_prob in log_probs]
         return {'text': responses, 'log_probs': log_prob_seqs}

@@ -166,7 +166,7 @@ class PubMedPromptTemplate(BasePromptTemplate):
         if not isinstance(prompt, PubMedPromptTemplate):
             raise TypeError("The provided prompt must be an instance of PubMedPromptTemplate.")
         # Determine if role swapping is needed
-        if self._fsl_prompt_type != prompt._fsl_prompt_type:
+        if self.prompt_type != prompt.prompt_type:
             swapped_history = [
                 PromptMessage(
                     role='assistant' if msg.role == 'user' else 'user' if msg.role == 'assistant' else msg.role,

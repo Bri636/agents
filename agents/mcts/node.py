@@ -14,7 +14,7 @@ from bigtree.node.node import Node
 Computable = Union[np.ndarray, int, float]
 State = TypeVar('State')
 Action = TypeVar('Action')
-Reward = TypeVar('Reward', Computable)
+Reward = TypeVar('Reward', bound=Computable)
 
 class MCTSNode(Node, Generic[State, Action]):
     
@@ -96,6 +96,47 @@ class MCTSNode(Node, Generic[State, Action]):
             return self.calc_q(self.cum_rewards)
         else: # else, Q value to infinity --> explore
             return 0.0
+        
+    @property
+    def depth(self) -> int: 
+        """ Computes the depth of the node in the tree """
+        depth, node = 0, self
+        while self.parent: 
+            depth +=1 
+            node = node.parent
+        return depth
+    
+    def uct(self, w_exp: float) -> float:
+        """ 
+        Gets the current UCT value for the node 
+
+        :param node: 
+
+         - Note: cum_rewards = num full rounds (expansion -> simulation -> backprop) involving that node
+
+         - N = Calculates number times parent node visited via cum_rewards
+
+         - n_i = number times child node visited via cum_rewards
+        """
+        N = max(1, len(self.parent.cum_rewards))  # num times parent node visited -
+        n_i = max(1, len(self.cum_rewards))  # num times child node visited
+        term = w_exp * np.sqrt(np.log(N) / n_i)  # left term in UCT
+        return self.Q + term
+    
+    def uct_select(self, w_exp: float) -> MCTSNode:
+        """ 
+        Supposing the node is fully expanded (aka max children), selects and returns the best child node (maxes UCT) out of the children 
+
+        :node: the current node you are at in your tree search
+
+        Note - This is called recursively in "_select" as you traverse the tree
+        Note - no fast reward, so node must be fully expanded
+        """
+        return max(self.children, key=lambda child: child.uct(w_exp))
+    
+    def terminal_depth_limit(self, depth_limit: int) -> bool:
+        """ True if node is terminal or depth limit exceeded """
+        return bool(self.is_terminal or self.depth >= depth_limit)
         
     def __str__(self) -> str:
         # Using rich to capture formatted string for __str__

@@ -93,9 +93,8 @@ class Actor:
         return self.generator.prompt_exceeds_limit(prompts.preprocess())
 
 
-@BaseReasoner.register(name='world_model')
-class WorldReasoner(BaseReasoner):
-
+# @BaseReasoner.register(name='world_model')
+class WorldReasoner(BaseReasoner, name='world_model'):
     def __init__(self,
                  generator: BaseLLMGenerator,
                  answer_prompt: BasePromptTemplate,

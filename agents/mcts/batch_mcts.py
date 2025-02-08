@@ -18,15 +18,11 @@ from agents.prompts import BasePromptTemplate
 from agents.pubmedqa import PubMedProblem
 from agents.gsm8k.utils import filter_output_type, gsm_is_correct
 from agents.mcts.node import MCTSNode, NodePath, Computable
-from agents.reasoners.wm_reasoner import WorldModel, Actor
+from agents.reasoners.wm_mcts_reasoner import WorldModel, Actor
 from agents.search import SearchStrategies
 
-def win_lose(win: bool,
-             win_reward: float = 100,
-             lose_reward: float = -50
-             ) -> float:
+def win_lose(win: bool, win_reward: float = 100, lose_reward: float = -50) -> float:
     return win_reward if win else lose_reward
-
 
 class BatchMCTS:
     def __init__(self,
@@ -65,18 +61,13 @@ class BatchMCTS:
         Note - Since no fast_reward instead of reward for unvisited children in UCT we HAVE to visit the *unvisited* children with maximum fast_reward first
         """
         super().__init__()
-        rollout_strategies: dict[str, Callable[[list[float]], int]] = {
+        rollout_strategies: dict[str, Callable] = {
             'max': lambda x: np.argmax(x),
             'sample': lambda x: np.random.choice(len(x), p=x),
             'random': lambda x: np.random.choice(len(x)),
         }
-
-        reward_strategies = {
-            'base': (win_lose, np.mean)  # stored as
-        }
-
-        self.simulate_choice: Callable[[list[float]], int] = rollout_strategies.get(simulate_strategy,
-                                                                                    simulate_strategy)
+        reward_strategies = {'base': (win_lose, np.mean)}
+        self.simulate_choice: Callable = rollout_strategies.get(simulate_strategy,simulate_strategy)
 
         self.output_trace_in_each_iter: bool = output_trace_in_each_iter
         self.w_exp: float = w_exp
@@ -104,56 +95,31 @@ class BatchMCTS:
         self._question_prompt_base = copy.deepcopy(question_prompt_base)
         self._answer_prompt_base = copy.deepcopy(answer_prompt_base)
         self.logger = logger
-
-    def _is_terminal_with_depth_limit(self, node: MCTSNode) -> bool:
-        """ True if node is terminal or depth limit exceeded """
-        return bool(node.is_terminal
-                    or node.depth >= self.depth_limit)
-
-    def _uct(self, node: MCTSNode) -> float:
+    
+    def batch_select(self, nodes: list[MCTSNode]) -> list[NodePath]: 
         """ 
-        Gets the current UCT value for the node 
-
-        :param node: 
-
-         - Note: cum_rewards = num full rounds (expansion -> simulation -> backprop) involving that node
-
-         - N = Calculates number times parent node visited via cum_rewards
-
-         - n_i = number times child node visited via cum_rewards
+        For each node in a batch of nodes, builds the optimal node path until terminal or leaf and 
+        returns it as a batch of node paths
+        
+        Parameters: 
+        ==========
+        nodes (list[MCTSNode]): 
+            list of Nodes to search over 
+        Returns: 
+        ========
+        (list[NodePath]): list of NodePaths until leaf or terminal
         """
-        N = len(node.parent.cum_rewards)  # num times parent node visited -
-        n_i = max(1, len(node.cum_rewards))  # num times child node visited
-        term = self.w_exp * np.sqrt(np.log(N) / n_i)  # left term in UCT
-
-        return node.Q + term
-
-    def _uct_select(self, node: MCTSNode) -> MCTSNode:
-        """ 
-        Supposing the node is fully expanded (aka max children), selects and returns the best child node (maxes UCT) out of the children 
-
-        :node: the current node you are at in your tree search
-
-        Note - This is called recursively in "_select" as you traverse the tree
-        Note - no fast reward, so node must be fully expanded
-        """
-        return max(node.children, key=self._uct)
-
-    def select(self, root: MCTSNode) -> NodePath:
-        ''' Goes through start node, and traverses via selecting best uct of children. If no children or terminal or depth-limit hit, return path as is '''
-        path = []
-        while True:
-            path.append(root)
-            if self._is_terminal_with_depth_limit(root) or len(root.children) == 0:
-                return path
-            best_child = self._uct_select(root)
-            root = best_child  # set node as best child
-
-    def batch_select(self, roots: list[MCTSNode]) -> list[NodePath]:
-        """ Batch selection of multiple best paths for list of roots"""
-        paths = [self.select(root)
-                 for root in roots]
-        return paths
+        node_paths = []
+        for node in nodes: 
+            node_path: NodePath = []
+            while True: # while not terminal condition, add to node path 
+                node_path.append(node)
+                if node.terminal_depth_limit(self.depth_limit) or len(node.children)==0: 
+                    node_paths.append(node_path)
+                    break
+                best_child = node.uct_select(self.w_exp)
+                node = best_child
+        return node_paths
 
     def batch_expand(self,
                      leaf_nodes: list[MCTSNode],
@@ -290,7 +256,7 @@ class BatchMCTS:
             if not active_indices:
                 break  # No active simulations left
             # Prepare prompts for active simulations
-            active_question_prompts: list[Prompt] = [
+            active_question_prompts: list[BasePromptTemplate] = [
                 question_prompts[idx] for idx in active_indices]
             # active_answer_prompts = [answer_prompts[idx] for idx in active_indices]
             # Generate sub-questions in batch
@@ -410,21 +376,22 @@ class BatchMCTS:
     ) -> Optional[list[NodePath]]:
         """Runs one iteration of MCTS on batch of input nodes using the actor-world model strategy."""
         paths: list[NodePath] = self.batch_select(roots)
-        # Identify terminal and non-terminal paths using term_indices mask - True if terminal
-        terminal_indices: list[bool] = [
-            self._is_terminal_with_depth_limit(path[-1]) for path in paths]
-        # terminal paths that we directly backprop
-        terminal_paths: list[NodePath] = [path for path,
-                                          is_term in zip(paths, terminal_indices) if is_term]
-        # non-terminal paths we need to expand and sim
-        sim_paths: list[NodePath] = [path for path, is_term in zip(
-            paths, terminal_indices) if not is_term]
-
+        # create simulate and terminal paths and a terminal mask
+        # TODO: make terminal_mask an array then ...
+        terminal_mask: list[bool] = []
+        terminal_paths, simulate_paths = [], []
+        for path in paths: 
+            if path[-1].terminal_depth_limit(self.depth_limit): 
+                terminal_mask.append(True)
+                terminal_paths.append(path)
+            else: 
+                terminal_mask.append(False)
+                simulate_paths.append(path)
+        terminal_mask = np.array(terminal_mask, dtype=bool)
+        breakpoint()
         if terminal_paths:
-            terminal_sample_indices: list[int] = [idx for idx, is_term in zip(
-                sample_indices, terminal_indices) if is_term]
-            cum_rewards_terminal: list[float] = self.batch_back_propagate(
-                terminal_paths)
+            terminal_sample_indices: list[int] = [idx for idx, is_term in zip(sample_indices, terminal_indices) if is_term]
+            cum_rewards_terminal: list[float] = self.batch_back_propagate(terminal_paths)
             # Update outputs for terminal paths
             for path, cum_reward, sample_idx in zip(terminal_paths, cum_rewards_terminal, terminal_sample_indices):
                 self._update_output(path, cum_reward, sample_idx)
@@ -474,6 +441,7 @@ class BatchMCTS:
 
             paths: list[NodePath] = self.batch_iterate(roots, actor, world_model,
                                                        num_children, samples, sample_indices, max_tries)
+            breakpoint()
             if paths:
                 for idx, path in enumerate(paths):
                     if self.output_trace_in_each_iter:
@@ -511,6 +479,7 @@ class BatchMCTS:
                                                                           samples,
                                                                           sample_indices,
                                                                           max_tries)
+        breakpoint()
         # Initialize lists to hold the results
         answers: list[str] = [''] * batch_size
         optimal_paths: list[NodePath] = [None] * batch_size

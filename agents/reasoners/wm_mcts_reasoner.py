@@ -11,7 +11,6 @@ from agents.prompts.base_prompt_template import BasePromptTemplate
 from agents.pubmedqa import filter_output_type, question_is_correct
 from agents.utils import get_error_details
 from agents.pubmedqa.utils import PubMedProblem
-from agents.mcts import BatchMCTS, MCTSNode
 
 class WorldModel:
     def __init__(self, generator: Generator) -> None:
@@ -91,6 +90,7 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
         Attempts to generate an answer for a sample question; it will return - 
         Tuple[if successfully generated, and if answer was correct]
         """
+        from agents.mcts import BatchMCTS, MCTSNode
         question = sample['question']
         mcts = MCTS(question_prompt_base=self.question_prompt, answer_prompt_base=self.answer_prompt)
 
@@ -139,6 +139,7 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
             - A list of messages for each sample.
             - A list of panels (visualizations) for each sample.
         """
+        from agents.mcts import BatchMCTS, MCTSNode
         
         batch_size = len(samples)
         corrects = [False] * batch_size
@@ -153,7 +154,8 @@ class MCTSWorldReasoner(BaseReasoner, name='mcts_world_model'):
             answer_prompt: BasePromptTemplate = copy.deepcopy(self.answer_prompt)
             question_prompt.add('user', content=problem)
             answer_prompt.add('user', content=problem)
-
+            # TODO: this can be made in evaluate, so we import MCTS stuff there, avoiding a circular import 
+            # aka so we pass this into the method
             root = MCTSNode(
                 state=question_prompt,
                 action=None,
