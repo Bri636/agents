@@ -16,7 +16,8 @@ from rich.text import Text
 # imported classes
 from agents.prompts import BasePromptTemplate
 from agents.pubmedqa import PubMedProblem
-from agents.gsm8k.utils import filter_output_type, gsm_is_correct
+# from agents.gsm8k.utils import filter_output_type, gsm_is_correct
+from agents.pubmedqa.utils import question_is_correct, filter_output_type
 from agents.mcts.node import MCTSNode, NodePath, Computable
 from agents.reasoners.wm_mcts_reasoner import WorldModel, Actor
 from agents.search import SearchStrategies
@@ -172,7 +173,6 @@ class BatchMCTS:
             answer_prompts[idx].add(role='user', content=sub_questions[idx])
         # Generate sub_answers with log_probs in batch
         sub_answers = world_model.batch_step_logprobs(answer_prompts)
-        breakpoint()
         # Process each sub_answer and create child nodes
         for idx in range(len(sub_answers)):
             # update each question prompt
@@ -182,10 +182,8 @@ class BatchMCTS:
                 role='assistant', content=sub_questions[idx])
             question_prompts[idx].add(role='user', content=sub_answer)
 
-            #
             if filter_output_type(sub_answer) == 'final_answer':
-                out, message = gsm_is_correct(
-                    sample_idx_refs[idx], sub_answer, sample_refs[idx])
+                out, message = question_is_correct(sample_idx_refs[idx], sub_answer, sample_refs[idx])
                 if verbose:
                     print(message)
                 reward = self.terminal_reward_strategy(out)
@@ -200,7 +198,6 @@ class BatchMCTS:
                                     parent=node_refs[idx],
                                     is_terminal=terminated,
                                     calc_q=self.calc_q_func)
-
             node_idx: int = node_true_idx_refs[idx]
             node_to_children[node_idx].append(child_node)
 
@@ -284,7 +281,7 @@ class BatchMCTS:
 
                 # Check for termination condition
                 if filter_output_type(sub_answer) == 'final_answer':
-                    correct, message = gsm_is_correct(
+                    correct, message = question_is_correct(
                         sample_indices[i], sub_answer, samples[i])
                     rollout_rewards[i].append(
                         self.terminal_reward_strategy(correct))
@@ -317,9 +314,11 @@ class BatchMCTS:
                 answer_prompts[i].reset()
 
         return result_flags
-
-    def back_propagate(self, path: NodePath) -> float:
+    
+    def batch_backpropagate(self, paths: list[NodePath]) -> list[float]: 
         """ 
+        Performs batch backpropagation against a batch of NodePaths 
+        Runs this in a batch: 
         Updates each node in the path with the cumulative rewards from rollout and returns the updated path and the cum_reward for the root 
 
         ex. leaf node gets rollout reward 
@@ -329,25 +328,23 @@ class BatchMCTS:
 
         :param path - list[MCTSNode]: list of nodes corresponding to search path 
         :param child_idx - int: Inside the leaf node, the idx of its expanded child node we simulated
+        
         """
-        rewards = []  # holds rewards for each node
-        for node in reversed(path):  # leaf --> root
-            # ex. leaf: rewards = [100]; leaf-1: rewards = [100, 10]; leaf-2: rewards = [100, 10, 15], ...
-            rewards.append(node.reward)
-            # NOTE: work-around for node.reward = None => we filter this out
-            rewards = list(filter(lambda x: x != None, rewards))
-            # self.cum_rewards callable sum; ex. sum([10, 100]), sum([15, 10, 100])
-            cum_reward = self.cum_reward_func(rewards[::-1])
-            # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
-            node.cum_rewards.append(cum_reward)
-
-        return cum_reward
-
-    def batch_back_propagate(self, paths: list[NodePath]) -> list[float]:
-        """ Batch back propagates a list of paths """
-        cum_rewards = [self.back_propagate(path)
-                       for path in paths]
-
+        cum_rewards = []
+        for path in paths: 
+            rewards = []
+            for node in reversed(path): 
+                # ex. leaf: rewards = [100]; leaf-1: rewards = [100, 10]; leaf-2: rewards = [100, 10, 15], ...
+                rewards.append(node.reward)
+                # NOTE: work-around for node.reward = None => we filter this out
+                rewards = list(filter(lambda x: x != None, rewards))
+                # self.cum_rewards callable sum; ex. sum([10, 100]), sum([15, 10, 100])
+                cum_reward = self.cum_reward_func(rewards[::-1])
+                # node.cum_rewards stores summed rewards for one iteration; ex. (leaf-1).cum_reward = 110
+                node.cum_rewards.append(cum_reward)
+            
+            cum_rewards.append(cum_reward)
+                
         return cum_rewards
 
     def _update_output(self, path: NodePath, cum_reward: float, sample_idx: int) -> None:
@@ -378,7 +375,7 @@ class BatchMCTS:
         paths: list[NodePath] = self.batch_select(roots)
         # create simulate and terminal paths and a terminal mask
         # TODO: make terminal_mask an array then ...
-        terminal_mask: list[bool] = []
+        terminal_mask: list[bool] = [] # if path is terminal 
         terminal_paths, simulate_paths = [], []
         for path in paths: 
             if path[-1].terminal_depth_limit(self.depth_limit): 
@@ -391,45 +388,37 @@ class BatchMCTS:
         sample_indices = np.array(sample_indices)
         # if terminal paths, directly backpropagate them update our output trace
         if terminal_paths:
-            cum_rewards_terminal = self.batch_back_propagate(terminal_paths)
+            cum_rewards_terminal = self.batch_backpropagate(terminal_paths)
             for path, cum_reward, sample_idx in zip(terminal_paths, 
                                                     cum_rewards_terminal, 
                                                     sample_indices[terminal_mask]):
                 self._update_output(path, cum_reward, sample_idx)
-        # else. 
+        # else, simulate the non terminal paths
         if simulate_paths:
-            self.batch_expand(leaf_nodes=[path[-1] for path in simulate_paths],
+            nodes_to_expand = [path[-1] for path in simulate_paths] # leaves 
+            sim_samples = np.array(samples, dtype=object)[~terminal_mask]
+            sim_sample_indices = sample_indices[~terminal_mask]
+            self.batch_expand(leaf_nodes=nodes_to_expand,
                               actor=actor, 
                               world_model=world_model,
                               num_children=num_children,
-                              samples=np.array(samples, dtype=object)[~terminal_mask], 
-                              sample_indices=sample_indices[~terminal_mask]
-                              )
+                              samples=sim_samples, 
+                              sample_indices=sim_sample_indices)
             # TODO: END OF WHAT I DID SO FAR
-            breakpoint()
-            breakpoint()
-            
-            # get sim indices and samples we need for learning - corresponds to the paths we want to expand and sim
-            sim_indices: list[int] = [idx for idx, is_term 
-                                      in zip(sample_indices, terminal_mask) if not is_term]
-            sim_samples: list[PubMedProblem] = [sample for sample, is_term in zip(
-                samples, terminal_indices) if not is_term]
-            # get all leaf nodes to expand
-            leaves_to_expand: list[MCTSNode] = [path[-1]
-                                                  for path in sim_paths]
-            self.batch_expand(leaves_to_expand, actor, world_model,
-                              num_children, sim_samples, sim_indices)
-            breakpoint()
-            successes = self.batch_simulate_node(sim_paths, actor, world_model,
-                                                 max_tries, sim_samples, sim_indices)
+            successes = self.batch_simulate_node(simulate_paths, 
+                                                 actor, 
+                                                 world_model,
+                                                 max_tries, 
+                                                 sim_samples, 
+                                                 sim_sample_indices)
+            # breakpoint()
             bp_paths: list[NodePath] = [path for success, path
-                                        in zip(successes, sim_paths) if success]
+                                        in zip(successes, simulate_paths) if success]
             bp_sample_indices: list[int] = [
-                idx for success, idx in zip(successes, sim_indices) if success]
+                idx for success, idx in zip(successes, sim_sample_indices) if success]
 
             if bp_paths:
-                cum_rewards_bp: list[float] = self.batch_back_propagate(
-                    bp_paths)
+                cum_rewards_bp: list[float] = self.batch_backpropagate(bp_paths)
                 # Update outputs for successfully simulated paths
                 for path, cum_reward, sample_idx in zip(bp_paths, cum_rewards_bp, bp_sample_indices):
                     self._update_output(path, cum_reward, sample_idx)
@@ -453,7 +442,7 @@ class BatchMCTS:
 
             paths: list[NodePath] = self.batch_iterate(roots, actor, world_model,
                                                        num_children, samples, sample_indices, max_tries)
-            breakpoint()
+            # breakpoint()
             if paths:
                 for idx, path in enumerate(paths):
                     if self.output_trace_in_each_iter:
@@ -491,7 +480,7 @@ class BatchMCTS:
                                                                           samples,
                                                                           sample_indices,
                                                                           max_tries)
-        breakpoint()
+        # breakpoint()
         # Initialize lists to hold the results
         answers: list[str] = [''] * batch_size
         optimal_paths: list[NodePath] = [None] * batch_size

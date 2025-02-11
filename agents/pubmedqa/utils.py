@@ -11,7 +11,8 @@ from rich.text import Text
 import time, random
 
 # parsing constants
-ANS_RE = re.compile(r"####\s*\$?\s*([-+]?\d+(?:,\d{3})*(?:\.\d+)?)", re.IGNORECASE)
+# ANS_RE = re.compile(r"####\s*\$?\s*([-+]?\d+(?:,\d{3})*(?:\.\d+)?)", re.IGNORECASE)
+ANS_RE = re.compile(r"####\s*\$?\s*([-+]?\d+(?:,\d{3})*(?:\.\d+)?|Yes|No|yes|no)", re.IGNORECASE)
 INVALID_ANS = "[invalid]"
 
 class PubMedContext(TypedDict): 
@@ -47,7 +48,8 @@ def pubmed_extract_answer(completion: str) -> str:
 def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_answer', '[invalid]']:
     """ Filter an LLM output and return what kind of response it is."""
     # Patterns
-    FA = re.compile(r"####\s*\$?\s*[-+]?\d+(?:,\d{3})*(?:\.\d+)?", re.IGNORECASE)
+    # FA = re.compile(r"####\s*\$?\s*[-+]?\d+(?:,\d{3})*(?:\.\d+)?", re.IGNORECASE)
+    FA = re.compile(r"####\s*\$?\s*([-+]?\d+(?:,\d{3})*(?:\.\d+)?|Yes|No)", re.IGNORECASE)
     Q = re.compile(r"\bQuestion\b", re.IGNORECASE)
     A = re.compile(r"\bAnswer\b", re.IGNORECASE)
 
@@ -69,9 +71,8 @@ def filter_output_type(llm_output: str) -> Literal['question', 'answer', 'final_
 
 def question_is_correct(idx: int, answer: str, gold_answer: dict[str, str]) -> Tuple[bool, str]:
     """ Checks if final model's output matches the gold answer """ 
-    answer = float(pubmed_extract_answer(answer))
-    gold_answer = float(pubmed_extract_answer(gold_answer["final_decision"]))
-    
+    answer = pubmed_extract_answer(answer).lower()
+    gold_answer = pubmed_extract_answer('####' + gold_answer["final_decision"]).lower()
     return (bool(answer == gold_answer), 
             f'Question #{idx + 1} << Model Guess: {answer} ||| Gold Answer: {gold_answer} >>\n')
 

@@ -49,7 +49,7 @@ ANSWER={
 You are an intelligent agent that is good at answering questions. 
 An expert will ask you a sub-question at each round.
 For each sub-question, please answer it in a complete sentence, ending with \"The answer is\". 
-If it is your final answer, you must state the answer in the format \"#### Your final answer\". 
+If it is your final answer, you must state the answer in the format \"#### Yes or No.\". 
 You are only allowed to give answers to questions.  
   """,
   "interactive_examples": [

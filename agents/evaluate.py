@@ -75,7 +75,7 @@ def batch_gsm_evaluate(
     strategy: str,
     dataset: Dataset,
     reasoner: BaseReasoner,
-    verbose: bool = False,
+    verbose: bool = True,
     disable_tqdm: bool = True,
     num_samples: int = 100,
     batch_size: int = 32,
@@ -112,7 +112,6 @@ def batch_gsm_evaluate(
                 num_correct += sum(corrects)
                 num_batches_completed += 1  # Fixed increment
             reasoner.reset_pass()  # reset prompts
-            breakpoint()
             print_batch_progress(console, batch_idx, num_batches, panels, messages, num_correct, batch_size) if verbose else None
             # logging statistics
             # NOTE - is num_batches the same as num_steps?

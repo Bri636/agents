@@ -98,11 +98,10 @@ class MCTSNode(Node, Generic[State, Action]):
             return 0.0
         
     @property
-    def depth(self) -> int: 
-        """ Computes the depth of the node in the tree """
+    def depth(self) -> int:
         depth, node = 0, self
-        while self.parent: 
-            depth +=1 
+        while node.parent:
+            depth += 1
             node = node.parent
         return depth
     
